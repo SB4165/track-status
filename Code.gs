@@ -30,28 +30,31 @@ const STEPS = [
 ];
 
 // Floor plan on a 1000 x 700 canvas (same orientation as the CAD drawing).
-// type: slot (equipment position) | wall (frame bar) | fixture (table etc.) | label (text only)
+// slot label = dedicated equipment types for that position (comma separated, shown for reference)
+// type: slot (equipment) | pack (packing area, step>=11 only) | wall | fixture | label | note
+// LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
+const LAYOUT_VERSION = '4';
+const PACK_MIN_STEP = 11;
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
 const DEFAULT_LAYOUT = [
   ['wall-top',  'wall',    '', '',                        90,   8, 865,  52, true],
   ['wall-left', 'wall',    '', '',                         8, 290,  52, 370, true],
-  ['slot-3',    'slot',     3, '',                        95,  72, 132, 218, true],
-  ['slot-4',    'slot',     4, '',                       240,  72, 132, 218, true],
-  ['slot-5',    'slot',     5, '',                       385,  72, 132, 218, true],
-  ['slot-6',    'slot',     6, '',                       530,  72, 132, 218, true],
-  ['slot-7',    'slot',     7, '',                       675,  72, 132, 218, true],
-  ['slot-8',    'slot',     8, '',                       820,  72, 132, 218, true],
-  ['slot-2',    'slot',     2, '',                        70, 302, 165, 172, true],
-  ['slot-1',    'slot',     1, '',                        70, 486, 165, 172, true],
-  ['fx-plate',  'fixture', '', '정반',                   804, 441, 117,  66, true],
+  ['slot-3',    'slot',     3, 'MPR, EMR, ITR',                      95,  72, 132, 218, true],
+  ['slot-4',    'slot',     4, 'STR, ESR',                     240,  72, 132, 218, true],
+  ['slot-5',    'slot',     5, 'STR, ESR',                     385,  72, 132, 218, true],
+  ['slot-6',    'slot',     6, 'MPR',                     530,  72, 132, 218, true],
+  ['slot-7',    'slot',     7, 'ITR, EMR',                     675,  72, 132, 218, true],
+  ['slot-8',    'slot',     8, 'FER',                     820,  72, 132, 218, true],
+  ['slot-2',    'slot',     2, 'MPR, ITR',                      70, 302, 165, 172, true],
+  ['slot-1',    'slot',     1, 'MPR',                      70, 486, 165, 172, true],
   ['fx-table1', 'fixture', '', '테이블',                 748, 605, 105,  61, true],
   ['fx-table2', 'fixture', '', '테이블',                 871, 605, 105,  61, true],
-  ['fx-shelf1', 'fixture', '', '선반',                   599, 460,  27, 103, true],
-  ['fx-shelf2', 'fixture', '', '선반',                   599, 563,  27, 103, true],
   ['lb-breaker','label',   '', '메인 전기 차단기 위치',  330, 575, 200,  20, true],
   ['lb-class',  'label',   '', 'class #1000',            400, 318, 230,  30, true],
-  ['note-1',    'note',    '', '기타사항',               268, 362, 305, 200, true],
+  ['pack-1',    'pack',     9, '패킹 1',                 268, 368, 150, 192, true],
+  ['pack-2',    'pack',    10, '패킹 2',                 428, 368, 150, 192, true],
+  ['note-1',    'note',    '', '기타사항',               712, 395, 264, 195, true],
 ];
 
 const SHEETS = {
@@ -64,7 +67,7 @@ const SHEETS = {
 
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
-  shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정',
+  shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -89,8 +92,13 @@ function setup() {
     }
     if (name !== 'Layout') sh.getRange(1, 1, sh.getMaxRows(), head.length).setNumberFormat('@');
   });
-  const layout = ss.getSheetByName('Layout');
-  if (layout.getLastRow() === 1) {
+  let layout = ss.getSheetByName('Layout');
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('LAYOUT_VERSION') !== LAYOUT_VERSION) {
+    layout.getRange(2, 1, Math.max(layout.getMaxRows() - 1, 1), LAYOUT_HEAD.length).clearContent();
+    props.setProperty('LAYOUT_VERSION', LAYOUT_VERSION);
+  }
+  if (layout.getLastRow() <= 1) {
     layout.getRange(2, 1, DEFAULT_LAYOUT.length, LAYOUT_HEAD.length).setValues(DEFAULT_LAYOUT);
   } else if (layout.getDataRange().getValues().every(r => r[1] !== 'note')) {
     // add default note box to an existing layout
@@ -102,15 +110,17 @@ function setup() {
   Logger.log('DB: ' + ss.getUrl());
 }
 
+let DB_ = null; // memoized per request (openById is slow)
 function getDb_() {
+  if (DB_) return DB_;
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('DB_ID');
   if (id) {
-    try { return SpreadsheetApp.openById(id); } catch (e) { Logger.log('DB open failed, recreating'); }
+    try { DB_ = SpreadsheetApp.openById(id); return DB_; } catch (e) { Logger.log('DB open failed, recreating'); }
   }
-  const ss = SpreadsheetApp.create('트랙 업무 진행현황 DB');
-  props.setProperty('DB_ID', ss.getId());
-  return ss;
+  DB_ = SpreadsheetApp.create('트랙 업무 진행현황 DB');
+  props.setProperty('DB_ID', DB_.getId());
+  return DB_;
 }
 
 // ===== HTTP =====
@@ -144,6 +154,7 @@ function doPost(e) {
       case 'release':       result = release_(body); break;
       case 'restore':       result = restore_(body); break;
       case 'saveNote':      result = saveNote_(body); break;
+      case 'updateProject': result = updateProject_(body); break;
       default: throw new Error('Unknown action');
     }
     return json_(Object.assign({ ok: true }, result));
@@ -287,6 +298,18 @@ function touchProject_(row, user) {
   ps.getRange(row, h.indexOf('updatedAt') + 1, 1, 2).setNumberFormat('@').setValues([[now_(), user || '']]);
 }
 
+function isPackSlot_(slot) {
+  return readTable_('Layout').some(r => String(r.type) === 'pack' && Number(r.slot) === Number(slot) && isActiveRow_(r.active));
+}
+function currentStepNo_(projectId) {
+  const steps = readTable_('Steps').filter(s => s.projectId === projectId).sort((a, b) => Number(a.stepNo) - Number(b.stepNo));
+  const cur = steps.find(s => s.status !== '완료');
+  return cur ? Number(cur.stepNo) : STEPS.length + 1;
+}
+function packError_() {
+  return new Error('패킹 칸에는 현재 공정이 ' + PACK_MIN_STEP + '번(' + STEPS[PACK_MIN_STEP - 1].name + ') 이상인 프로젝트만 배치할 수 있습니다.');
+}
+
 function slotError_(slot, occupant) {
   const e = new Error(slot + '번에는 이미 "' + occupant + '" 프로젝트가 배치되어 있습니다.');
   e.code = 'OCCUPIED'; e.occupant = occupant;
@@ -302,6 +325,7 @@ function createProject_(b) {
   const ps = ss.getSheetByName('Projects');
   const active = readTable_('Projects').filter(p => p.state === 'active');
   if (active.some(p => p.projectName === name)) throw new Error('이미 등록된 진행중 프로젝트입니다.');
+  if (slot && isPackSlot_(slot)) throw packError_();
   if (slot) {
     const occ = active.find(p => Number(p.slot) === slot);
     if (occ && !b.force) throw slotError_(slot, occ.projectName);
@@ -325,6 +349,7 @@ function setSlot_(b) {
   const row = projectRow_(b.projectId);
   const proj = rowObj_('Projects', row);
   const slot = b.slot ? Number(b.slot) : '';
+  if (slot && isPackSlot_(slot) && currentStepNo_(proj.id) < PACK_MIN_STEP) throw packError_();
   if (slot) {
     const occ = readTable_('Projects').find(p => p.state === 'active' && Number(p.slot) === slot && p.id !== proj.id);
     if (occ && !b.force) throw slotError_(slot, occ.projectName);
@@ -388,6 +413,21 @@ function saveNote_(b) {
   const vals = [[id, String(b.content || ''), now_(), b.user || '']];
   if (row < 0) appendText_(sh, vals[0]); else sh.getRange(row, 1, 1, 4).setNumberFormat('@').setValues(vals);
   history_(b.user, 'note', null, null, id + ': ' + String(b.content || ''));
+  return bootstrap_();
+}
+
+function updateProject_(b) {
+  const ps = getDb_().getSheetByName('Projects');
+  const row = projectRow_(b.projectId);
+  const proj = rowObj_('Projects', row);
+  const name = String(b.projectName || '').trim();
+  if (!name) throw new Error('프로젝트명이 필요합니다.');
+  if (name !== proj.projectName && readTable_('Projects').some(p => p.state === 'active' && p.projectName === name && p.id !== proj.id)) {
+    throw new Error('이미 등록된 진행중 프로젝트입니다.');
+  }
+  ps.getRange(row, SHEETS.Projects.indexOf('projectName') + 1).setNumberFormat('@').setValue(name);
+  touchProject_(row, b.user);
+  history_(b.user, 'edit', { id: proj.id, projectName: name, slot: proj.slot }, null, proj.projectName + ' → ' + name);
   return bootstrap_();
 }
 
