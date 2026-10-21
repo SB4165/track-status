@@ -7,6 +7,13 @@
     get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (_) { return null; } },
   };
+  // write password: remembered only while this tab is open (sessionStorage)
+  const SS = {
+    get(k) { try { return sessionStorage.getItem(k); } catch (_) { return SS._m[k] || null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch (_) { SS._m[k] = v; } },
+    del(k) { try { sessionStorage.removeItem(k); } catch (_) { delete SS._m[k]; } },
+    _m: {},
+  };
   const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
   const PACK_MIN_STEP = 11;
 
@@ -32,16 +39,13 @@
     return j;
   }
   async function apiPost(body) {
-    const key = LS.get('track.key');
+    const key = SS.get('track.key');
     if (key) body.key = key;
     const j = DEMO ? await Demo.post(body) : await (await fetch(API, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), redirect: 'follow',
     })).json();
     if (!j.ok) {
-      if (/권한 키/.test(j.error || '')) {
-        const k = prompt('입력 권한 키를 입력하세요');
-        if (k) { LS.set('track.key', k.trim()); return apiPost(body); }
-      }
+      if (/비밀번호|권한 키/.test(j.error || '')) SS.del('track.key');
       throw new Error(j.error || '저장 실패');
     }
     return j;
@@ -99,12 +103,41 @@
 
   // ===================== Optimistic mutations =====================
   // apply(data) changes local data immediately; the request is queued and synced in the background.
-  function mutate(body, okMsg, apply) {
+  // password dialog (once per tab session)
+  const needKey = () => !!(state.data && state.data.keyRequired) && !SS.get('track.key');
+  function askKey() {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.className = 'overlay'; ov.style.zIndex = '90';
+      ov.innerHTML = `<div class="sheet narrow" role="dialog" aria-modal="true"><div class="sheet-head"><div><div class="eyebrow">입력·수정·삭제 권한</div><h2>비밀번호 입력</h2></div></div>
+        <div class="sheet-body"><label class="f">비밀번호<input type="password" id="pwIn" autocomplete="current-password"></label>
+        <div class="hint" id="pwMsg" style="margin-top:6px">이 창(탭)을 닫기 전까지는 다시 묻지 않습니다.</div>
+        <div class="row-end"><button class="btn" id="pwNo">취소</button><button class="btn primary" id="pwOk">확인</button></div></div></div>`;
+      document.body.appendChild(ov);
+      const inp = ov.querySelector('#pwIn'); const msg = ov.querySelector('#pwMsg'); const okB = ov.querySelector('#pwOk');
+      const done = (v) => { ov.remove(); resolve(v); };
+      const submit = async () => {
+        const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+        okB.disabled = true; msg.textContent = '확인 중…'; msg.style.color = '';
+        SS.set('track.key', v);
+        try { await apiPost({ action: 'checkKey' }); done(true); }
+        catch (e) { SS.del('track.key'); msg.textContent = e.message; msg.style.color = 'var(--danger)'; okB.disabled = false; inp.select(); }
+      };
+      okB.addEventListener('click', submit);
+      ov.querySelector('#pwNo').addEventListener('click', () => { done(false); render(); });
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { done(false); render(); } });
+      setTimeout(() => inp.focus(), 50);
+    });
+  }
+
+  function mutate(body, okMsg, apply, after) {
+    if (needKey()) { askKey().then(ok => { if (ok) mutate(body, okMsg, apply, after); }); return false; }
     const user = getUser();
     if (apply) {
       try { apply(state.data, user); } catch (e) { toast(e.message, true); render(); return false; }
     }
     render();
+    if (after) after();
     if (okMsg) toast(okMsg);
     state.pending++; syncLabel();
     const sent = Object.assign({}, body, { user });
@@ -122,6 +155,7 @@
       } catch (e) {
         state.pending--;
         toast('저장 실패: ' + e.message, true);
+        if (/비밀번호/.test(e.message)) state.queue = Promise.resolve();
         try { state.data = await apiGet({ action: 'bootstrap' }); render(true); } catch (_) { render(); }
       }
       syncLabel();
@@ -158,8 +192,7 @@
   function setSlot(p, slot, after) {
     const c = checkSlot(slot, p);
     if (!c.ok) { render(); return false; }
-    mutate({ action: 'setSlot', projectId: p.id, slot: slot || '', force: !!c.force }, slot ? `${slotName(slot)}에 배치되었습니다` : '미배치로 변경되었습니다', d => applySlot(d, p.id, slot));
-    if (after) after();
+    mutate({ action: 'setSlot', projectId: p.id, slot: slot || '', force: !!c.force }, slot ? `${slotName(slot)}에 배치되었습니다` : '미배치로 변경되었습니다', d => applySlot(d, p.id, slot), after);
     return true;
   }
 
@@ -456,8 +489,7 @@
         const pid = editP.id;
         mutate({ action: 'updateProject', projectId: pid, projectName: name }, '프로젝트명이 변경되었습니다', d => {
           const p = byId(d, pid); if (p) { p.projectName = name; p.updatedAt = nowStr(); }
-        });
-        state.openStep = null; renderProject(findProject(pid));
+        }, () => { state.openStep = null; renderProject(findProject(pid)); });
         return;
       }
       const slot = $('#regSlot').value;
@@ -471,9 +503,7 @@
           createdAt: nowStr(), createdBy: user, updatedAt: nowStr(), updatedBy: user,
           steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
         });
-      });
-      state.openStep = null;
-      renderProject(findProject(tmp));
+      }, () => { state.openStep = null; renderProject(findProject(tmp)); });
     });
     draw();
     loadNames(false).then(draw).catch(err => { if (!state.names) $('#list').innerHTML = `<div class="none">목록을 불러오지 못했습니다: ${esc(err.message)}</div>`; });

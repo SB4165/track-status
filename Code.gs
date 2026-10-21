@@ -143,6 +143,7 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
     checkKey_(body.key);
+    if (body.action === 'checkKey') return json_({ ok: true });
     lock.waitLock(20000);
     let result;
     switch (body.action) {
@@ -172,7 +173,7 @@ function json_(obj) {
 
 function checkKey_(key) {
   const k = PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
-  if (k && key !== k) throw new Error('입력 권한 키가 올바르지 않습니다.');
+  if (k && key !== k) throw new Error('비밀번호가 올바르지 않습니다.');
 }
 
 // ===== Reference: project names =====
@@ -238,7 +239,8 @@ function bootstrap_() {
   });
   const notes = {};
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy }; });
-  return { layout, projects, notes, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
+  const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
+  return { layout, projects, notes, keyRequired, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
