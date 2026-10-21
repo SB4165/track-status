@@ -33,7 +33,7 @@ const STEPS = [
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
 // type: slot (equipment) | pack (packing area, step>=11 only) | wall | fixture | label | note
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
-const LAYOUT_VERSION = '4';
+const LAYOUT_VERSION = '5';
 const PACK_MIN_STEP = 11;
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
@@ -50,7 +50,6 @@ const DEFAULT_LAYOUT = [
   ['slot-1',    'slot',     1, 'MPR',                      70, 486, 165, 172, true],
   ['fx-table1', 'fixture', '', '테이블',                 748, 605, 105,  61, true],
   ['fx-table2', 'fixture', '', '테이블',                 871, 605, 105,  61, true],
-  ['lb-breaker','label',   '', '메인 전기 차단기 위치',  330, 575, 200,  20, true],
   ['lb-class',  'label',   '', 'class #1000',            400, 318, 230,  30, true],
   ['pack-1',    'pack',     9, '패킹 1',                 268, 368, 150, 192, true],
   ['pack-2',    'pack',    10, '패킹 2',                 428, 368, 150, 192, true],

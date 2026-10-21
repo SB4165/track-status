@@ -700,7 +700,7 @@
       L('slot-6', 'slot', 6, 'MPR', 530, 72, 132, 218), L('slot-7', 'slot', 7, 'ITR, EMR', 675, 72, 132, 218), L('slot-8', 'slot', 8, 'FER', 820, 72, 132, 218),
       L('slot-2', 'slot', 2, 'MPR, ITR', 70, 302, 165, 172), L('slot-1', 'slot', 1, 'MPR', 70, 486, 165, 172),
       L('fx-table1', 'fixture', null, '테이블', 748, 605, 105, 61), L('fx-table2', 'fixture', null, '테이블', 871, 605, 105, 61),
-      L('lb-breaker', 'label', null, '메인 전기 차단기 위치', 330, 575, 200, 20), L('lb-class', 'label', null, 'class #1000', 400, 318, 230, 30),
+      L('lb-class', 'label', null, 'class #1000', 400, 318, 230, 30),
       L('pack-1', 'pack', 9, '패킹 1', 268, 368, 150, 192), L('pack-2', 'pack', 10, '패킹 2', 428, 368, 150, 192),
       L('note-1', 'note', null, '기타사항', 712, 395, 264, 195),
     ];
