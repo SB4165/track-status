@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>트랙 업무 진행현황</title>
-  <meta name="theme-color" content="#f5f6f8">
+  <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,10 +15,14 @@
         <h1>트랙 업무 진행현황</h1>
         <span class="sub" id="lastSync">불러오는 중…</span>
       </div>
+      <nav class="tabs" role="tablist">
+        <button class="tab on" role="tab" data-tab="board">진행현황</button>
+        <button class="tab" role="tab" data-tab="projects">프로젝트 관리 <span class="cnt" id="projCnt"></span></button>
+      </nav>
       <div class="actions">
         <button class="btn ghost" id="userBtn" title="작성자 이름 변경">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
-          <span id="userName">이름 설정</span>
+          <span id="userName" class="hide-sm">이름 설정</span>
         </button>
         <button class="btn" id="refreshBtn" title="새로고침">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>
@@ -29,13 +33,42 @@
   </header>
 
   <main class="wrap">
-    <section class="stats" id="stats"></section>
-    <div class="legend" id="legend"></div>
     <div class="banner" id="banner" hidden></div>
-    <section class="board" id="board" aria-label="배치도"></section>
+
+    <!-- Board view -->
+    <section id="viewBoard" class="view">
+      <div class="stats" id="stats"></div>
+      <div class="legend" id="legend"></div>
+      <div class="plan-wrap"><div class="plan" id="plan" aria-label="공장 배치도"></div></div>
+      <div class="slot-list" id="slotList"></div>
+    </section>
+
+    <!-- Projects view -->
+    <section id="viewProjects" class="view" hidden>
+      <div class="toolbar">
+        <div class="tb-left">
+          <div class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="pSearch" placeholder="프로젝트 검색">
+          </div>
+          <div class="chips" id="pFilter"></div>
+        </div>
+        <div class="tb-right">
+          <button class="btn" id="exportBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+            엑셀 다운로드
+          </button>
+          <button class="btn primary" id="addBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            프로젝트 등록
+          </button>
+        </div>
+      </div>
+      <div class="ptable" id="pTable"></div>
+    </section>
   </main>
 
-  <!-- Detail modal -->
+  <!-- Modal -->
   <div class="overlay" id="overlay" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mTitle">
       <div class="sheet-head">
