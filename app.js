@@ -82,12 +82,14 @@
 
   function projectInfo(p) {
     const steps = p.steps || [];
-    const done = steps.filter(s => s.status === '완료').length;
+    const isDone = s => s.status === '완료' || s.status === '생략';
+    const skipped = steps.filter(s => s.status === '생략').length;
+    const done = steps.filter(isDone).length;
     const total = steps.length || 14;
-    const cur = steps.find(s => s.status !== '완료') || null;
+    const cur = steps.find(s => !isDone(s)) || null;
     const curNo = cur ? Number(cur.stepNo) : total + 1;
     const fixing = steps.filter(s => s.status === '조치중');
-    const openIssues = steps.filter(s => s.status !== '완료' && String(s.issue || '').trim());
+    const openIssues = steps.filter(s => !isDone(s) && String(s.issue || '').trim());
     let prog = String(p.summaryProgress || '').trim();
     if (!prog) {
       const latest = steps.filter(s => String(s.progress || '').trim()).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
@@ -96,9 +98,12 @@
     let issue = String(p.summaryIssue || '').trim();
     if (!issue && openIssues.length) issue = openIssues.map(s => `${s.stepNo}. ${s.issue}`).join(' / ');
     const pct = Math.round(done / total * 100);
-    return { done, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
+    return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
   }
-  function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold' }[s] || '--st-wait'; }
+  function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
+  // pseudo project for a new registration starting at step `start` (for pack rule / options)
+  const fakeProj = (start) => ({ id: null, steps: ((state.data && state.data.stepDefs) || []).map(s => ({ stepNo: s.no, status: s.no < start ? '생략' : '대기' })) });
+  const startOptions = (sel) => ((state.data && state.data.stepDefs) || []).map(s => `<option value="${s.no}" ${Number(sel) === s.no ? 'selected' : ''}>${s.no}. ${esc(s.name)}</option>`).join('');
   const packMsg = () => `패킹 칸에는 현재 공정이 ${PACK_MIN_STEP}번(패킹리스트 확인) 이상인 프로젝트만 배치할 수 있습니다.`;
 
   // ===================== Optimistic mutations =====================
@@ -429,7 +434,10 @@
           <label class="f">진행사항 요약<textarea id="sumProg" rows="2" placeholder="${esc(i.prog && !p.summaryProgress ? '자동: ' + i.prog : '비워두면 공정 기록에서 자동 표시')}">${esc(p.summaryProgress)}</textarea></label>
           <label class="f">이슈사항 요약<textarea id="sumIssue" rows="2" placeholder="${esc(i.issue && !p.summaryIssue ? '자동: ' + i.issue : '비워두면 공정 기록에서 자동 표시')}">${esc(p.summaryIssue)}</textarea></label>
         </div>
-        <div class="row-end"><button class="btn" id="saveSum">요약 저장</button></div>
+        <div class="row-end between" style="flex-wrap:wrap">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 생략 처리">이 공정부터 진행</button></div>
+          <button class="btn" id="saveSum">요약 저장</button>
+        </div>
       </div>
       <div class="section-t">전체 공정 <span class="hint">공정을 눌러 상세 입력</span></div>
       <div class="steps">${steps}</div>
@@ -460,9 +468,10 @@
       <label class="f">프로젝트명 검색<input type="search" id="q" placeholder="프로젝트명 검색" autocomplete="off"></label>
       <div class="search-list" id="list"><div class="none">프로젝트 목록 불러오는 중…</div></div>
       ${editP ? '' : `<div class="grid2" style="margin-top:12px">
-        <label class="f">배치 (선택)<select class="in" id="regSlot">${slotOptions(mode.slot || '', null)}</select></label>
-        <div class="hint" style="align-self:end;padding-bottom:6px">패킹 칸은 ${PACK_MIN_STEP}번 공정 이상일 때 배치할 수 있습니다.</div>
-      </div>`}
+        <label class="f">시작 공정<select class="in" id="regStart">${startOptions(1)}</select></label>
+        <label class="f">배치 (선택)<select class="in" id="regSlot">${slotOptions(mode.slot || '', fakeProj(1))}</select></label>
+      </div>
+      <div class="hint" style="margin-top:6px">시작 공정 이전 공정은 '생략'으로 등록됩니다. 패킹 칸은 ${PACK_MIN_STEP}번 공정 이상일 때 배치할 수 있습니다.</div>`}
       <div class="row-end between">
         <button class="btn ghost" id="reloadNames">목록 새로고침</button>
         <button class="btn primary" id="regBtn" disabled>${editP ? '변경' : '등록'}</button>
@@ -479,6 +488,7 @@
       $('#regBtn').disabled = !selected || (editP && selected === editP.projectName);
     };
     $('#q').addEventListener('input', draw);
+    if (!editP) $('#regStart').addEventListener('change', () => { const cur = $('#regSlot').value; $('#regSlot').innerHTML = slotOptions(cur, fakeProj(Number($('#regStart').value))); if ($('#regSlot').selectedOptions[0] && $('#regSlot').selectedOptions[0].disabled) $('#regSlot').value = ''; });
     $('#list').addEventListener('click', e => { const b = e.target.closest('button[data-n]'); if (!b || b.disabled) return; selected = b.dataset.n; draw(); });
     $('#list').addEventListener('dblclick', e => { const b = e.target.closest('button[data-n]'); if (b && !b.disabled) $('#regBtn').click(); });
     $('#reloadNames').addEventListener('click', () => { state.names = null; draw(); loadNames(true).then(draw).catch(err => toast(err.message, true)); });
@@ -493,15 +503,16 @@
         return;
       }
       const slot = $('#regSlot').value;
-      const c = checkSlot(slot, null);
+      const start = Number($('#regStart').value) || 1;
+      const c = checkSlot(slot, fakeProj(start));
       if (!c.ok) return;
       const tmp = 'tmp-' + Date.now();
-      mutate({ action: 'createProject', projectName: name, slot, force: !!c.force, _tmp: tmp }, '등록되었습니다', (d, user) => {
+      mutate({ action: 'createProject', projectName: name, slot, startStep: start, force: !!c.force, _tmp: tmp }, '등록되었습니다', (d, user) => {
         if (slot) d.projects.forEach(x => { if (x.state === 'active' && Number(x.slot) === Number(slot)) x.slot = null; });
         d.projects.push({
           id: tmp, slot: slot ? Number(slot) : null, projectName: name, state: 'active', summaryProgress: '', summaryIssue: '',
           createdAt: nowStr(), createdBy: user, updatedAt: nowStr(), updatedBy: user,
-          steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
+          steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: s.no < start ? '생략' : '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
         });
       }, () => { state.openStep = null; renderProject(findProject(tmp)); });
     });
@@ -692,6 +703,14 @@
         const p = byId(d, pid); if (p) { p.state = 'shipped'; p.slot = null; }
       });
     }
+    if (id === 'skipBtn') {
+      const n = Number($('#skipSel').value);
+      mutate({ action: 'skipTo', projectId: pid, stepNo: n }, `${n}번 공정부터 진행합니다`, d => {
+        const p = byId(d, pid); if (!p) return;
+        p.steps.forEach(s => { const no = Number(s.stepNo); if (no < n && !['완료', '생략'].includes(s.status)) s.status = '생략'; if (no >= n && s.status === '생략') s.status = '대기'; });
+        state.openStep = n;
+      });
+    }
     if (id === 'removeBtn') removeProject(findProject(pid));
     if (id === 'editBtn') openPicker({ edit: findProject(pid) });
     if (id === 'restoreBtn') {
@@ -753,12 +772,12 @@
       mk('P7', null, names[6], 0), mk('P8', null, names[7], 2),
       Object.assign(mk('P9', null, names[8], 14), { state: 'shipped' }),
     ];
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류'] }));
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'] }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const occupied = (slot, selfId) => db.find(p => p.state === 'active' && Number(p.slot) === Number(slot) && p.id !== selfId);
     const isPackD = (slot) => layout.some(l => l.type === 'pack' && l.slot === Number(slot));
-    const curNo = (p) => { const c = p.steps.find(s => s.status !== '완료'); return c ? c.stepNo : 15; };
+    const curNo = (p) => { const c = p.steps.find(s => s.status !== '완료' && s.status !== '생략'); return c ? c.stepNo : 15; };
     return {
       get(p) {
         if (p.action === 'projectNames') return wait({ ok: true, names });
@@ -774,7 +793,7 @@
           const occ = b.slot && occupied(b.slot);
           if (occ && !b.force) return fail('이미 배치됨');
           if (occ) occ.slot = null;
-          const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.createdAt = now(); p.createdBy = b.user;
+          const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.steps.forEach(s => { if (s.stepNo < (b.startStep || 1)) s.status = '생략'; }); p.createdAt = now(); p.createdBy = b.user;
           db.push(p); log(b, '프로젝트 등록', p);
         }
         const p = db.find(x => x.id === b.projectId);
@@ -785,6 +804,7 @@
           if (occ) occ.slot = null;
           p.slot = b.slot ? Number(b.slot) : null; log(b, '배치 변경', p);
         }
+        if (b.action === 'skipTo' && p) { p.steps.forEach(s => { if (s.stepNo < b.stepNo && !['완료', '생략'].includes(s.status)) s.status = '생략'; if (s.stepNo >= b.stepNo && s.status === '생략') s.status = '대기'; }); log(b, '시작 공정 지정', p); }
         if (b.action === 'updateProject' && p) { log(b, '프로젝트명 수정', p, null, p.projectName + ' → ' + b.projectName); p.projectName = b.projectName; }
         if (b.action === 'saveStep' && p) {
           const s = p.steps.find(x => x.stepNo === b.stepNo);

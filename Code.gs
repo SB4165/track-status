@@ -10,7 +10,8 @@ const REF_SHEET_GID = 664632288;
 const REF_NAME_COL = 12;   // L
 const REF_FILTER_TEXT = 'TRACK'; // checked in column M
 
-const STATUSES = ['대기', '진행', '조치중', '완료', '보류'];
+const STATUSES = ['대기', '진행', '조치중', '완료', '보류', '생략'];
+const DONE_LIKE = ['완료', '생략'];
 
 const STEPS = [
   { no: 1,  name: 'QC검수',                 file: false },
@@ -66,7 +67,7 @@ const SHEETS = {
 
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
-  shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정',
+  shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -155,6 +156,7 @@ function doPost(e) {
       case 'restore':       result = restore_(body); break;
       case 'saveNote':      result = saveNote_(body); break;
       case 'updateProject': result = updateProject_(body); break;
+      case 'skipTo':        result = skipTo_(body); break;
       default: throw new Error('Unknown action');
     }
     return json_(Object.assign({ ok: true }, result));
@@ -304,7 +306,7 @@ function isPackSlot_(slot) {
 }
 function currentStepNo_(projectId) {
   const steps = readTable_('Steps').filter(s => s.projectId === projectId).sort((a, b) => Number(a.stepNo) - Number(b.stepNo));
-  const cur = steps.find(s => s.status !== '완료');
+  const cur = steps.find(s => DONE_LIKE.indexOf(s.status) === -1);
   return cur ? Number(cur.stepNo) : STEPS.length + 1;
 }
 function packError_() {
@@ -326,7 +328,8 @@ function createProject_(b) {
   const ps = ss.getSheetByName('Projects');
   const active = readTable_('Projects').filter(p => p.state === 'active');
   if (active.some(p => p.projectName === name)) throw new Error('이미 등록된 진행중 프로젝트입니다.');
-  if (slot && isPackSlot_(slot)) throw packError_();
+  const start = Math.min(Math.max(Number(b.startStep) || 1, 1), STEPS.length);
+  if (slot && isPackSlot_(slot) && start < PACK_MIN_STEP) throw packError_();
   if (slot) {
     const occ = active.find(p => Number(p.slot) === slot);
     if (occ && !b.force) throw slotError_(slot, occ.projectName);
@@ -338,10 +341,10 @@ function createProject_(b) {
   const id = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + Math.floor(Math.random() * 90 + 10);
   const t = now_();
   appendText_(ps, [id, slot, name, 'active', '', '', t, b.user || '', t, b.user || '']);
-  const rows = STEPS.map(s => [id, s.no, s.name, '대기', '', '', '', '', '', s.file, '', '', '', '']);
+  const rows = STEPS.map(s => [id, s.no, s.name, s.no < start ? '생략' : '대기', '', '', '', '', '', s.file, '', '', '', '']);
   const st = ss.getSheetByName('Steps');
   st.getRange(st.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-  history_(b.user, 'create', { id: id, projectName: name, slot: slot }, null, slot ? slot + '번 배치' : '미배치');
+  history_(b.user, 'create', { id: id, projectName: name, slot: slot }, null, (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작' : ''));
   return bootstrap_();
 }
 
@@ -414,6 +417,27 @@ function saveNote_(b) {
   const vals = [[id, String(b.content || ''), now_(), b.user || '']];
   if (row < 0) appendText_(sh, vals[0]); else sh.getRange(row, 1, 1, 4).setNumberFormat('@').setValues(vals);
   history_(b.user, 'note', null, null, id + ': ' + String(b.content || ''));
+  return bootstrap_();
+}
+
+// steps before stepNo: not completed -> 생략 ; steps from stepNo: 생략 -> 대기 (completed records are kept)
+function skipTo_(b) {
+  const n = Number(b.stepNo);
+  if (!n) throw new Error('시작 공정이 필요합니다.');
+  const st = getDb_().getSheetByName('Steps');
+  const vals = st.getDataRange().getValues();
+  const h = SHEETS.Steps; const si = h.indexOf('status');
+  for (let i = 1; i < vals.length; i++) {
+    if (vals[i][0] !== b.projectId) continue;
+    const no = Number(vals[i][1]); const s = vals[i][si];
+    let ns = s;
+    if (no < n && s !== '완료' && s !== '생략') ns = '생략';
+    if (no >= n && s === '생략') ns = '대기';
+    if (ns !== s) st.getRange(i + 1, si + 1, 1, 1).setNumberFormat('@').setValue(ns);
+  }
+  const prow = projectRow_(b.projectId);
+  touchProject_(prow, b.user);
+  history_(b.user, 'skip', rowObj_('Projects', prow), null, n + '번 공정부터 진행 (이전 미완료 공정 생략)');
   return bootstrap_();
 }
 
