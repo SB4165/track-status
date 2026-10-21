@@ -200,7 +200,14 @@ function readTable_(name) {
     return o;
   });
 }
-function fmtDate_(d) { return Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd'); }
+function fmtDate_(d) {
+  const t = Utilities.formatDate(d, 'Asia/Seoul', 'HH:mm');
+  return Utilities.formatDate(d, 'Asia/Seoul', t === '00:00' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm');
+}
+// append as plain text (appendRow would auto-convert date-like strings)
+function appendText_(sh, arr) {
+  sh.getRange(sh.getLastRow() + 1, 1, 1, arr.length).setNumberFormat('@').setValues([arr.map(v => (v === null || v === undefined) ? '' : String(v))]);
+}
 function now_() { return Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm'); }
 function isActiveRow_(v) { return String(v).toUpperCase() !== 'FALSE'; }
 
@@ -271,13 +278,13 @@ function history_(by, action, proj, step, detail) {
     startDate: step ? step.startDate : '', endDate: step ? step.endDate : '', owner: step ? step.owner : '',
     progress: step ? step.progress : '', issue: step ? step.issue : '', detail: detail || '',
   };
-  getDb_().getSheetByName('History').appendRow(h.map(k => (o[k] === undefined || o[k] === null) ? '' : o[k]));
+  appendText_(getDb_().getSheetByName('History'), h.map(k => (o[k] === undefined || o[k] === null) ? '' : o[k]));
 }
 
 function touchProject_(row, user) {
   const ps = getDb_().getSheetByName('Projects');
   const h = SHEETS.Projects;
-  ps.getRange(row, h.indexOf('updatedAt') + 1, 1, 2).setValues([[now_(), user || '']]);
+  ps.getRange(row, h.indexOf('updatedAt') + 1, 1, 2).setNumberFormat('@').setValues([[now_(), user || '']]);
 }
 
 function slotError_(slot, occupant) {
@@ -305,7 +312,7 @@ function createProject_(b) {
   }
   const id = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + Math.floor(Math.random() * 90 + 10);
   const t = now_();
-  ps.appendRow([id, slot, name, 'active', '', '', t, b.user || '', t, b.user || '']);
+  appendText_(ps, [id, slot, name, 'active', '', '', t, b.user || '', t, b.user || '']);
   const rows = STEPS.map(s => [id, s.no, s.name, '대기', '', '', '', '', '', s.file, '', '', '', '']);
   const st = ss.getSheetByName('Steps');
   st.getRange(st.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
@@ -379,7 +386,7 @@ function saveNote_(b) {
   const sh = getDb_().getSheetByName('Notes');
   const row = findRow_(sh, r => r[0] === id);
   const vals = [[id, String(b.content || ''), now_(), b.user || '']];
-  if (row < 0) sh.appendRow(vals[0]); else sh.getRange(row, 1, 1, 4).setValues(vals);
+  if (row < 0) appendText_(sh, vals[0]); else sh.getRange(row, 1, 1, 4).setNumberFormat('@').setValues(vals);
   history_(b.user, 'note', null, null, id + ': ' + String(b.content || ''));
   return bootstrap_();
 }
