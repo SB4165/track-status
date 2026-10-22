@@ -15,7 +15,7 @@
     _m: {},
   };
   const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  const PACK_MIN_STEP = 13;
+  const PACK_MIN_STEP = 12;
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -114,7 +114,7 @@
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
   const fakeProj = (start) => ({ id: null, steps: ((state.data && state.data.stepDefs) || []).map(s => ({ stepNo: s.no, status: s.no < start ? '완료' : '대기' })) });
   const startOptions = (sel) => ((state.data && state.data.stepDefs) || []).map(s => `<option value="${s.no}" ${Number(sel) === s.no ? 'selected' : ''}>${s.no}. ${esc(s.name)}</option>`).join('');
-  const packMsg = () => `패킹 칸에는 현재 공정이 ${PACK_MIN_STEP}번(패킹리스트 확인) 이상인 프로젝트만 배치할 수 있습니다.`;
+  const packMsg = () => `패킹 칸에는 현재 공정이 ${PACK_MIN_STEP}번(${esc(((state.data && state.data.stepDefs) || [])[PACK_MIN_STEP - 1]?.name || '')}) 이상인 프로젝트만 배치할 수 있습니다.`;
 
   // ===================== Optimistic mutations =====================
   // apply(data) changes local data immediately; the request is queued and synced in the background.

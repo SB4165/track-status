@@ -44,7 +44,7 @@ const STEPS_VERSION = '3';
 // type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
 const LAYOUT_VERSION = '6';
-const PACK_MIN_STEP = 13; // 패킹리스트 확인
+const PACK_MIN_STEP = 12; // 클리닝(제조)
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
 const DEFAULT_LAYOUT = [
