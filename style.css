@@ -418,3 +418,10 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
   .sy-sp { margin-left: 0; }
   .sy-a .sy-lb:first-child { width: 100%; }
 }
+/* 3 tabs: move tabs to their own row earlier so the logo/title never gets clipped */
+@media (max-width: 980px) {
+  .topbar-inner { flex-wrap: wrap; row-gap: 8px; }
+  .title { flex: 1; }
+  .tabs { order: 3; width: 100%; margin: 0; }
+  .tab { flex: 1; justify-content: center; }
+}
