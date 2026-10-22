@@ -435,3 +435,19 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 #plan .card.dragging { opacity: .45; }
 #plan.dragmode [data-pack] > .card { outline: 2px dashed color-mix(in srgb, #7c5cff 55%, transparent); outline-offset: 2px; }
 #plan [data-pack].drop-on > .card { outline: 3px solid #7c5cff; outline-offset: 2px; background: color-mix(in srgb, #7c5cff 10%, var(--surface)); }
+
+/* topbar: sync time under refresh; logo/title balance */
+.actions { align-items: flex-start; }
+.act-col { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.sync-at { font-size: 11.5px; color: var(--text-3); white-space: nowrap; line-height: 1.2; }
+.title h1.logo { font-size: 18px; font-weight: 700; gap: 10px; letter-spacing: -.02em; }
+.logo .wm { height: 15px; }
+.logo .lsep { height: 18px; }
+@media (max-width: 760px) { .title h1.logo { font-size: 15px; gap: 7px; } .logo .wm { height: 12px; } .logo .lsep { height: 14px; } .sync-at { font-size: 10.5px; } }
+/* sync table sorting */
+.sy-tbl th[data-sort] { cursor: pointer; user-select: none; }
+.sy-tbl th[data-sort]:hover { color: var(--accent); }
+.sy-tbl th .ar { display: inline-block; width: 10px; margin-left: 3px; font-size: 10px; color: var(--text-3); }
+.sy-tbl th.sorted { color: var(--accent); }
+.sy-tbl th.sorted .ar { color: var(--accent); }
+@media (max-width: 640px) { .sync-at { font-size: 10px; max-width: 108px; white-space: normal; text-align: right; } .title h1.logo { overflow: hidden; } }

@@ -672,7 +672,20 @@
   }
 
   // ===================== Sync tab (reference sheet) =====================
-  const SY = { rows: null, at: '', loading: false, view: 'list', from: '', to: '', quick: 'all', st: '', group: '', q: '', hide: LS.get('track.syncHide') === '1', sel: new Set(), start: {}, slot: {}, hist: null, histLoading: false };
+  const SY = { rows: null, at: '', loading: false, view: 'list', from: '', to: '', quick: 'all', st: '', group: '', q: '', hide: LS.get('track.syncHide') === '1', sel: new Set(), start: {}, slot: {}, hist: null, histLoading: false, sort: (() => { try { return JSON.parse(LS.get('track.sySort') || 'null') || { k: '', d: 1 }; } catch (_) { return { k: '', d: 1 }; } })() };
+  // sorting (k: '' = sheet order). No. column always shows the on-screen order 1..n
+  const SY_SORT = {
+    st: r => ({ wait: 0, ok: 1, ex: 2 })[r.s.k],
+    ship: r => r.d || null,
+    name: r => r.name, g: r => r.g, type: r => r.type,
+    cur: r => (r.s.k === 'ok' ? (projectInfo(r.s.p).cur ? Number(projectInfo(r.s.p).cur.stepNo) : 99) : null),
+  };
+  const sySorted = (rows) => {
+    const f = SY_SORT[SY.sort.k]; if (!f) return rows;
+    // empty values (미정 / not synced) always stay at the bottom
+    return rows.slice().sort((a, b) => { const x = f(a), y = f(b); if (x == null || y == null) return x == null && y == null ? a.no - b.no : (x == null ? 1 : -1); const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'ko', { numeric: true }); return (c || (a.no - b.no)) * SY.sort.d; });
+  };
+  const syTh = (k, label) => `<th data-sort="${k}" class="${SY.sort.k === k ? 'sorted' : ''}">${label}<span class="ar">${SY.sort.k === k ? (SY.sort.d > 0 ? '▲' : '▼') : ''}</span></th>`;
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const refDate = (s) => { const m = String(s || '').match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1].length === 2 ? '20' + m[1] : m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
   function quickRange(k) {
@@ -716,7 +729,7 @@
     catch (e) { SY.hist = []; toast('이력 불러오기 실패: ' + e.message, true); }
     SY.histLoading = false; renderSync();
   }
-  function syRow(r) {
+  function syRow(r, idx) {
     const k = r.s.k; const n = esc(r.name); const on = SY.sel.has(r.name);
     let start = '<span class="muted">-</span>', slot = '<span class="muted">-</span>', cur = '<span class="muted">-</span>';
     if (k === 'wait') {
@@ -728,7 +741,7 @@
       slot = p.state !== 'active' ? '출하완료' : p.slot ? esc(slotName(p.slot)) + (ty.length ? ' [' + esc(ty.join('/')) + ']' : '') : '미배치';
       cur = `<button class="sy-link" data-open="${esc(p.id)}">${i.cur ? `${pill(i.cur.status)} ${i.cur.stepNo}. ${esc(i.cur.stepName)}` : `${pill('완료')} 전 공정 완료`}</button>`;
     } else cur = '<span class="muted">관리 대상 아님</span>';
-    return `<tr class="${k !== 'wait' ? 'done' : ''} ${on ? 'on' : ''}" data-name="${n}"><td class="ck"><input type="checkbox" data-ck="${n}" ${on ? 'checked' : ''} aria-label="선택"></td><td>${esc(r.no)}</td><td><span class="sy-st ${k}">${r.s.t}</span></td><td>${r.d ? r.d.replace(/-/g, '.') : (String(r.ship || '').trim() ? esc(r.ship) : '<span class="muted">미정</span>')}</td><td><b>${n}</b></td><td>${esc(r.g)}</td><td>${esc(r.type)}</td><td>${start}</td><td>${slot}</td><td>${cur}</td></tr>`;
+    return `<tr class="${k !== 'wait' ? 'done' : ''} ${on ? 'on' : ''}" data-name="${n}"><td class="ck"><input type="checkbox" data-ck="${n}" ${on ? 'checked' : ''} aria-label="선택"></td><td>${idx + 1}</td><td><span class="sy-st ${k}">${r.s.t}</span></td><td>${r.d ? r.d.replace(/-/g, '.') : (String(r.ship || '').trim() ? esc(r.ship) : '<span class="muted">미정</span>')}</td><td><b>${n}</b></td><td>${esc(r.g)}</td><td>${esc(r.type)}</td><td>${start}</td><td>${slot}</td><td>${cur}</td></tr>`;
   }
   function renderSync() {
     const all = syAll();
@@ -750,7 +763,7 @@
     $('#syFrom').value = SY.from; $('#syTo').value = SY.to; $('#syStatus').value = SY.st;
     $$('#syQuick button').forEach(b => b.classList.toggle('on', b.dataset.q === SY.quick));
     $('#syHide').classList.toggle('on', SY.hide); $('#syHide').textContent = SY.hide ? '동기화 완료건 보이기' : '동기화 완료건 숨기기';
-    const rows = syFiltered();
+    const rows = sySorted(syFiltered());
     const vis = new Set(rows.map(r => r.name)); [...SY.sel].forEach(n => { if (!vis.has(n)) SY.sel.delete(n); });
     const sel = rows.filter(r => SY.sel.has(r.name));
     const sw = sel.filter(r => r.s.k === 'wait'), so = sel.filter(r => r.s.k === 'ok' && r.s.p.state === 'active'), sx = sel.filter(r => r.s.k === 'ex');
@@ -763,7 +776,7 @@
     if (!SY.rows) { $('#syTable').innerHTML = `<div class="sy-empty">${SY.loading ? '참조 시트를 불러오는 중…' : '목록을 불러오지 못했습니다. 새로고침을 눌러 주세요.'}</div>`; return; }
     const allOn = rows.length > 0 && rows.every(r => SY.sel.has(r.name));
     const sc = $('#syTable').scrollTop;
-    $('#syTable').innerHTML = `<table><thead><tr><th class="ck"><input type="checkbox" data-all="1" ${allOn ? 'checked' : ''} aria-label="전체 선택"></th><th>No.</th><th>상태</th><th>출하일</th><th>프로젝트명</th><th>프로젝트 그룹</th><th>TYPE</th><th>시작 공정</th><th>배치</th><th>사이트 현재 공정</th></tr></thead><tbody>${rows.map(syRow).join('') || '<tr><td colspan="10" class="sy-empty">조건에 맞는 프로젝트가 없습니다</td></tr>'}</tbody></table>`;
+    $('#syTable').innerHTML = `<table><thead><tr><th class="ck"><input type="checkbox" data-all="1" ${allOn ? 'checked' : ''} aria-label="전체 선택"></th>${syTh('', 'No.')}${syTh('st', '상태')}${syTh('ship', '출하일')}${syTh('name', '프로젝트명')}${syTh('g', '프로젝트 그룹')}${syTh('type', 'TYPE')}<th>시작 공정</th><th>배치</th>${syTh('cur', '사이트 현재 공정')}</tr></thead><tbody>${rows.map(syRow).join('') || '<tr><td colspan="10" class="sy-empty">조건에 맞는 프로젝트가 없습니다</td></tr>'}</tbody></table>`;
     $('#syTable').scrollTop = sc;
   }
   function doSync(list, label) {
@@ -834,6 +847,8 @@
     renderSync();
   });
   $('#syTable').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (th) { const k = th.dataset.sort; SY.sort = k === '' ? { k: '', d: 1 } : { k, d: SY.sort.k === k ? -SY.sort.d : 1 }; LS.set('track.sySort', JSON.stringify(SY.sort)); renderSync(); return; }
     const o = e.target.closest('[data-open]'); if (o) { const p = findProject(o.dataset.open); if (p) { state.openStep = null; renderProject(p); } return; }
     if (e.target.closest('input,select,button,label')) return;
     const tr = e.target.closest('tr[data-name]'); if (!tr) return;
