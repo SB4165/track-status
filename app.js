@@ -25,7 +25,7 @@
     data: null,
     names: (() => { try { return JSON.parse(LS.get('track.names') || 'null'); } catch (_) { return null; } })(),
     tab: LS.get('track.tab') === 'projects' ? 'projects' : 'board',
-    filter: 'active', q: '',
+    filter: 'active', q: '', group: '',
     openProjectId: null, openStep: null,
     pending: 0, queue: Promise.resolve(), idMap: {},
   };
@@ -78,6 +78,13 @@
   const typesHTML = (n) => { const t = slotTypes(n); return t.length ? `<div class="types">${t.map(x => `<i>${esc(x)}</i>`).join('')}</div>` : ''; };
   const bySlot = () => { const m = {}; activeProjects().forEach(p => { if (p.slot) m[Number(p.slot)] = p; }); return m; };
   const byId = (d, id) => d.projects.find(x => x.id === id || x.id === state.idMap[id]);
+  // project set: 'MISC-MPR7 #1' -> 'MISC-#1', 'RD-SH-13-013 EMR#1' -> 'RD-SH-13-013'
+  const groupOf = (name) => {
+    const n = String(name || '').trim();
+    let m = n.match(/^(\S+)\s+[A-Za-z]+\d*\s*#\d+$/); if (m) return m[1];
+    m = n.match(/^([A-Za-z]+)-[A-Za-z]+\d*\s*(#\d+)$/); if (m) return m[1] + '-' + m[2];
+    m = n.match(/^(.+?)\s*#\d+$/); return m ? m[1] : n;
+  };
   const findProject = (id) => projects().find(p => p.id === id || p.id === state.idMap[id]);
 
   function projectInfo(p) {
@@ -320,6 +327,18 @@
     };
     const F = [['active', '진행중'], ['placed', '배치중'], ['unplaced', '미배치'], ['shipped', '출하완료'], ['all', '전체']];
     $('#pFilter').innerHTML = F.map(([k, l]) => `<button class="chip ${state.filter === k ? 'on' : ''}" data-f="${k}">${l}<b>${counts[k]}</b></button>`).join('');
+    // project-set filter
+    let gs = $('#pGroup');
+    if (!gs) {
+      gs = document.createElement('select'); gs.id = 'pGroup'; gs.className = 'slotsel grpsel'; gs.setAttribute('aria-label', '프로젝트 그룹');
+      $('#pFilter').parentNode.insertBefore(gs, $('#pFilter'));
+      gs.addEventListener('change', () => { state.group = gs.value; renderProjects(); });
+    }
+    const gc = {}; all.forEach(p => { const g = groupOf(p.projectName); gc[g] = (gc[g] || 0) + 1; });
+    const gk = Object.keys(gc).sort((a, b) => a.localeCompare(b));
+    if (state.group && !gc[state.group]) state.group = '';
+    gs.innerHTML = `<option value="">전체 프로젝트 그룹</option>` + gk.map(g => `<option value="${esc(g)}" ${g === state.group ? 'selected' : ''}>${esc(g)} (${gc[g]})</option>`).join('');
+    gs.classList.toggle('set', !!state.group);
 
     const q = state.q.trim().toLowerCase();
     const list = all.filter(p => {
@@ -327,6 +346,7 @@
       if (state.filter === 'placed' && !(p.state === 'active' && p.slot)) return false;
       if (state.filter === 'unplaced' && !(p.state === 'active' && !p.slot)) return false;
       if (state.filter === 'shipped' && p.state !== 'shipped') return false;
+      if (state.group && groupOf(p.projectName) !== state.group) return false;
       return !q || String(p.projectName).toLowerCase().includes(q);
     }).sort((a, b) => {
       if (a.state !== b.state) return a.state === 'active' ? -1 : 1;
@@ -350,7 +370,7 @@
       const cs = i.cur ? `<span class="t">${i.cur.stepNo}. ${esc(i.cur.stepName)}</span>${pill(i.cur.status)}` : `<span class="t">전 공정 완료</span>${pill('완료')}`;
       return `<div class="prow" data-pid="${esc(p.id)}">
         <div class="sl">${sel}</div>
-        <div class="nm">${esc(p.projectName)}<small>등록 ${esc(String(p.createdAt || '').slice(0, 10))}${p.createdBy ? ' · ' + esc(p.createdBy) : ''}</small></div>
+        <div class="nm">${esc(p.projectName)}<small>${esc(groupOf(p.projectName))} · 등록 ${esc(String(p.createdAt || '').slice(0, 10))}${p.createdBy ? ' · ' + esc(p.createdBy) : ''}</small></div>
         <div class="cs">${cs}</div>
         <div class="pg"><div class="bar"><i style="width:${i.pct}%"></i></div><span>${i.done}/${i.total} · ${i.pct}%</span></div>
         <div class="is ${i.issue ? '' : 'none'}">${i.issue ? esc(i.issue) : '이슈 없음'}</div>

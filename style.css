@@ -206,6 +206,7 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .tb-left, .tb-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); width: 240px; color: var(--text-3); }
 .search input { border: 0; outline: none; background: none; width: 100%; font-size: 14px; color: var(--text); }
+.slotsel.grpsel { width: auto; min-width: 170px; height: 36px; border-radius: 10px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 12.5px; font-weight: 700; color: var(--text-2); cursor: pointer; }
 .chip b { color: var(--text-3); font-weight: 700; margin-left: 3px; }
@@ -334,6 +335,7 @@ textarea { resize: vertical; min-height: 60px; line-height: 1.45; }
   .stat .v { font-size: 19px; }
   .tb-left, .tb-right { width: 100%; }
   .search { width: 100%; }
+  .slotsel.grpsel { width: 100%; }
   .tb-right .btn { flex: 1; }
   .overlay { padding: 0; align-items: flex-end; }
   .sheet, .sheet.narrow { width: 100%; max-height: 92vh; border-radius: 18px 18px 0 0; }
