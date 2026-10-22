@@ -175,6 +175,7 @@ function doPost(e) {
       case 'saveNote':      result = saveNote_(body); break;
       case 'updateProject': result = updateProject_(body); break;
       case 'skipTo':        result = skipTo_(body); break;
+      case 'bulkSkipTo':    result = bulkSkipTo_(body); break;
       case 'syncProjects':  result = syncProjects_(body); break;
       case 'unsync':        result = unsync_(body); break;
       case 'exclude':       result = exclude_(body); break;
@@ -393,7 +394,7 @@ function createProject_(b) {
   const id = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + Math.floor(Math.random() * 90 + 10);
   const t = now_();
   appendText_(ps, [id, slot, name, 'active', '', '', t, b.user || '', t, b.user || '']);
-  const rows = STEPS.map(s => [id, s.no, s.name, s.no < start ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']);
+  const rows = STEPS.map(s => [id, s.no, s.name, startDone_(s.no, start) ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']);
   const st = ss.getSheetByName('Steps');
   st.getRange(st.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
   history_(b.user, 'create', { id: id, projectName: name, slot: slot }, null, (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작 (이전 공정 완료 처리)' : ''));
@@ -473,23 +474,44 @@ function saveNote_(b) {
 }
 
 // steps before stepNo: not completed -> 완료 (work done, records just not entered) ; steps from stepNo: 생략 -> 대기
+// a step counts as done when it is before the start step; starting at the last step (출하완료) means everything is done
+function startDone_(no, start) { return no < start || start >= STEPS.length; }
+function skipDetail_(n) { return n >= STEPS.length ? n + '. ' + STEPS[STEPS.length - 1].name + ' (전 공정 완료 처리)' : n + '번 공정부터 진행 (이전 공정 완료 처리)'; }
+function applySkip_(st, vals, pid, n) {
+  const si = SHEETS.Steps.indexOf('status');
+  for (let i = 1; i < vals.length; i++) {
+    if (String(vals[i][0]) !== String(pid)) continue;
+    const no = Number(vals[i][1]); const s = vals[i][si];
+    let ns = s;
+    if (startDone_(no, n) && s !== '완료' && s !== '생략') ns = '완료';
+    if (!startDone_(no, n) && s === '생략') ns = '대기';
+    if (ns !== s) { st.getRange(i + 1, si + 1, 1, 1).setNumberFormat('@').setValue(ns); vals[i][si] = ns; }
+  }
+}
 function skipTo_(b) {
   const n = Number(b.stepNo);
   if (!n) throw new Error('시작 공정이 필요합니다.');
   const st = getDb_().getSheetByName('Steps');
-  const vals = st.getDataRange().getValues();
-  const h = SHEETS.Steps; const si = h.indexOf('status');
-  for (let i = 1; i < vals.length; i++) {
-    if (vals[i][0] !== b.projectId) continue;
-    const no = Number(vals[i][1]); const s = vals[i][si];
-    let ns = s;
-    if (no < n && s !== '완료' && s !== '생략') ns = '완료';
-    if (no >= n && s === '생략') ns = '대기';
-    if (ns !== s) st.getRange(i + 1, si + 1, 1, 1).setNumberFormat('@').setValue(ns);
-  }
+  applySkip_(st, st.getDataRange().getValues(), b.projectId, n);
   const prow = projectRow_(b.projectId);
   touchProject_(prow, b.user);
-  history_(b.user, 'skip', rowObj_('Projects', prow), null, n + '번 공정부터 진행 (이전 공정 완료 처리)');
+  history_(b.user, 'skip', rowObj_('Projects', prow), null, skipDetail_(n));
+  return bootstrap_();
+}
+// apply the same current step to several projects at once
+function bulkSkipTo_(b) {
+  const n = Number(b.stepNo);
+  const ids = Array.isArray(b.projectIds) ? b.projectIds.map(String) : [];
+  if (!n || !ids.length) throw new Error('대상과 공정이 필요합니다.');
+  const st = getDb_().getSheetByName('Steps');
+  const vals = st.getDataRange().getValues();
+  ids.forEach(pid => {
+    let prow;
+    try { prow = projectRow_(pid); } catch (_) { return; }
+    applySkip_(st, vals, pid, n);
+    touchProject_(prow, b.user);
+    history_(b.user, 'skip', rowObj_('Projects', prow), null, '일괄 지정: ' + skipDetail_(n));
+  });
   return bootstrap_();
 }
 
@@ -558,7 +580,7 @@ function syncProjects_(b) {
     if (slot) occ[slot] = true;
     const id = base + ('00' + k).slice(-3) + Math.floor(Math.random() * 90 + 10);
     pRows.push([id, String(slot), name, 'active', '', '', t, user, t, user]);
-    STEPS.forEach(s => sRows.push([id, s.no, s.name, s.no < start ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']));
+    STEPS.forEach(s => sRows.push([id, s.no, s.name, startDone_(s.no, start) ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']));
     hRows.push(histArr_(user, 'sync', { id: id, projectName: name, slot: slot }, null,
       '참조 시트 동기화 · ' + (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작 (이전 공정 완료 처리)' : '') + note));
   });
