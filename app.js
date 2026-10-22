@@ -24,7 +24,7 @@
   const state = {
     data: null,
     names: (() => { try { return JSON.parse(LS.get('track.names') || 'null'); } catch (_) { return null; } })(),
-    tab: LS.get('track.tab') === 'projects' ? 'projects' : 'board',
+    tab: ['projects', 'sync'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
     filter: 'active', q: '', group: '',
     openProjectId: null, openStep: null,
     pending: 0, queue: Promise.resolve(), idMap: {},
@@ -163,6 +163,7 @@
     const tmp = sent._tmp; delete sent._tmp;
     state.queue = state.queue.then(async () => {
       if (sent.projectId && state.idMap[sent.projectId]) sent.projectId = state.idMap[sent.projectId];
+      if (sent.projectIds) sent.projectIds = sent.projectIds.map(x => state.idMap[x] || x);
       try {
         const j = await apiPost(sent);
         if (tmp) {
@@ -221,6 +222,7 @@
     renderTabs();
     renderBoard();
     renderProjects();
+    renderSync();
     $('#projCnt').textContent = activeProjects().length || '';
     syncLabel();
     // re-render the open project only for local changes (server syncs must not wipe what the user is typing)
@@ -234,6 +236,7 @@
     $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === state.tab));
     $('#viewBoard').hidden = state.tab !== 'board';
     $('#viewProjects').hidden = state.tab !== 'projects';
+    $('#viewSync').hidden = state.tab !== 'sync';
   }
 
   function cardHTML(slot, p) {
@@ -654,8 +657,175 @@
     });
   }
 
+  // ===================== Sync tab (reference sheet) =====================
+  const SY = { rows: null, at: '', loading: false, view: 'list', from: '', to: '', quick: 'all', st: '', group: '', q: '', hide: LS.get('track.syncHide') === '1', sel: new Set(), start: {}, slot: {}, hist: null, histLoading: false };
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const refDate = (s) => { const m = String(s || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
+  function quickRange(k) {
+    const d = new Date(today() + 'T00:00:00');
+    if (k === 'week') { const a = new Date(d); a.setDate(d.getDate() - (d.getDay() + 6) % 7); const b = new Date(a); b.setDate(a.getDate() + 6); return [ymd(a), ymd(b)]; }
+    if (k === 'month') return [ymd(new Date(d.getFullYear(), d.getMonth(), 1)), ymd(new Date(d.getFullYear(), d.getMonth() + 1, 0))];
+    if (k === 'year') return [d.getFullYear() + '-01-01', d.getFullYear() + '-12-31'];
+    return ['', ''];
+  }
+  function syncStatus(r) {
+    const ps = projects().filter(p => p.state !== 'removed' && p.projectName === r.name);
+    if (ps.length) return { k: 'ok', t: '동기화 완료', p: ps.find(p => p.state === 'active') || ps[0] };
+    if (((state.data && state.data.syncExcluded) || []).includes(r.name)) return { k: 'ex', t: '제외' };
+    return { k: 'wait', t: '대기' };
+  }
+  const syAll = () => (SY.rows || []).map(r => Object.assign({}, r, { d: refDate(r.date), g: groupOf(r.name), s: syncStatus(r) }));
+  const syFiltered = () => syAll().filter(r => {
+    if (SY.from && (!r.d || r.d < SY.from)) return false;
+    if (SY.to && (!r.d || r.d > SY.to)) return false;
+    if (SY.st && r.s.k !== SY.st) return false;
+    if (SY.group && r.g !== SY.group) return false;
+    if (SY.q && !r.name.toLowerCase().includes(SY.q.toLowerCase())) return false;
+    if (SY.hide && r.s.k === 'ok') return false;
+    return true;
+  });
+  const sySel = () => syFiltered().filter(r => SY.sel.has(r.name));
+  async function loadSync(manual) {
+    if (SY.loading) return;
+    SY.loading = true; renderSync();
+    try {
+      const j = await apiGet({ action: 'refRows', refresh: manual ? '1' : '0' });
+      SY.rows = j.rows; SY.at = new Date().toTimeString().slice(0, 8);
+      if (manual) toast('참조 시트를 다시 불러왔습니다');
+    } catch (e) { toast('참조 시트 불러오기 실패: ' + e.message, true); }
+    SY.loading = false; renderSync();
+  }
+  async function loadSyncHist() {
+    if (SY.histLoading) return;
+    SY.histLoading = true;
+    try { SY.hist = (await apiGet({ action: 'history', actions: 'sync,unsync,exclude,include' })).rows.slice().reverse(); }
+    catch (e) { SY.hist = []; toast('이력 불러오기 실패: ' + e.message, true); }
+    SY.histLoading = false; renderSync();
+  }
+  function syRow(r) {
+    const k = r.s.k; const n = esc(r.name); const on = SY.sel.has(r.name);
+    let start = '<span class="muted">-</span>', slot = '<span class="muted">-</span>', cur = '<span class="muted">-</span>';
+    if (k === 'wait') {
+      const st = Number(SY.start[r.name] || 1);
+      start = `<select class="sy-mini" data-start="${n}">${startOptions(st)}</select>`;
+      slot = `<select class="sy-mini" data-slot="${n}">${slotOptions(SY.slot[r.name] || '', fakeProj(st), true)}</select>`;
+    } else if (k === 'ok') {
+      const p = r.s.p; const i = projectInfo(p); const ty = p.slot ? slotTypes(p.slot) : [];
+      slot = p.state !== 'active' ? '출하완료' : p.slot ? esc(slotName(p.slot)) + (ty.length ? ' [' + esc(ty.join('/')) + ']' : '') : '미배치';
+      cur = `<button class="sy-link" data-open="${esc(p.id)}">${i.cur ? `${pill(i.cur.status)} ${i.cur.stepNo}. ${esc(i.cur.stepName)}` : `${pill('완료')} 전 공정 완료`}</button>`;
+    } else cur = '<span class="muted">관리 대상 아님</span>';
+    return `<tr class="${k !== 'wait' ? 'done' : ''} ${on ? 'on' : ''}" data-name="${n}"><td class="ck"><input type="checkbox" data-ck="${n}" ${on ? 'checked' : ''} aria-label="선택"></td><td>${esc(r.no)}</td><td><span class="sy-st ${k}">${r.s.t}</span></td><td>${esc(r.date)}</td><td><b>${n}</b></td><td>${esc(r.g)}</td><td>${esc(r.type)}</td><td>${esc(r.kind)}</td><td>${start}</td><td>${slot}</td><td>${cur}</td></tr>`;
+  }
+  function renderSync() {
+    const all = syAll();
+    const c = k => all.filter(r => r.s.k === k).length;
+    $('#syncCnt').textContent = SY.rows ? (c('wait') || '') : '';
+    if (state.tab !== 'sync' || !state.data) return;
+    $('#syList').hidden = SY.view !== 'list'; $('#syHist').hidden = SY.view !== 'hist';
+    $$('#syView button').forEach(b => b.classList.toggle('on', b.dataset.v === SY.view));
+    if (SY.view === 'hist') {
+      $('#syMeta').textContent = SY.hist ? `동기화·취소·제외 이력 ${SY.hist.length}건` : '이력 불러오는 중…';
+      if (!SY.hist) { $('#syHistTable').innerHTML = '<div class="sy-empty">불러오는 중…</div>'; loadSyncHist(); return; }
+      $('#syHistTable').innerHTML = `<table><thead><tr><th>일시</th><th>작업</th><th>프로젝트명</th><th>배치</th><th>작업자</th><th>내용</th></tr></thead><tbody>${SY.hist.map(h => `<tr class="nohover"><td>${esc(h.at)}</td><td><b>${esc(h.actionLabel || h.action)}</b></td><td>${esc(h.projectName)}</td><td>${h.slot !== '' && h.slot != null ? esc(slotName(h.slot)) : '-'}</td><td>${esc(h.by)}</td><td class="wrap">${esc(h.detail)}</td></tr>`).join('') || '<tr><td colspan="6" class="sy-empty">이력이 없습니다</td></tr>'}</tbody></table>`;
+      return;
+    }
+    $('#syMeta').textContent = SY.rows ? `${all.length}건 · 대기 ${c('wait')} · 동기화 완료 ${c('ok')} · 제외 ${c('ex')}${SY.at ? ' · ' + SY.at + ' 갱신' : ''}` : (SY.loading ? '참조 시트 불러오는 중…' : '');
+    const groups = [...new Set(all.map(r => r.g))].sort();
+    if (SY.group && !groups.includes(SY.group)) SY.group = '';
+    $('#syGroup').innerHTML = '<option value="">프로젝트 그룹 전체</option>' + groups.map(g => `<option value="${esc(g)}" ${g === SY.group ? 'selected' : ''}>${esc(g)}</option>`).join('');
+    $('#syFrom').value = SY.from; $('#syTo').value = SY.to; $('#syStatus').value = SY.st;
+    $$('#syQuick button').forEach(b => b.classList.toggle('on', b.dataset.q === SY.quick));
+    $('#syHide').classList.toggle('on', SY.hide); $('#syHide').textContent = SY.hide ? '동기화 완료건 보이기' : '동기화 완료건 숨기기';
+    const rows = syFiltered();
+    const vis = new Set(rows.map(r => r.name)); [...SY.sel].forEach(n => { if (!vis.has(n)) SY.sel.delete(n); });
+    const sel = rows.filter(r => SY.sel.has(r.name));
+    const sw = sel.filter(r => r.s.k === 'wait'), so = sel.filter(r => r.s.k === 'ok' && r.s.p.state === 'active'), sx = sel.filter(r => r.s.k === 'ex');
+    const fw = rows.filter(r => r.s.k === 'wait').length;
+    $('#syCond').textContent = `조건부 동기화 (${fw})`; $('#syCond').disabled = !fw;
+    $('#syAll').textContent = `일괄 동기화 (${c('wait')})`; $('#syAll').disabled = !c('wait');
+    $('#sySel').textContent = `선택 동기화 (${sw.length})`; $('#sySel').disabled = !sw.length;
+    $('#syUnsync').textContent = '동기화 취소' + (so.length ? ` (${so.length})` : ''); $('#syUnsync').disabled = !so.length;
+    $('#syEx').textContent = !sw.length && sx.length ? `제외 해제 (${sx.length})` : '선택 제외' + (sw.length ? ` (${sw.length})` : ''); $('#syEx').disabled = !(sw.length || sx.length);
+    if (!SY.rows) { $('#syTable').innerHTML = `<div class="sy-empty">${SY.loading ? '참조 시트를 불러오는 중…' : '목록을 불러오지 못했습니다. 새로고침을 눌러 주세요.'}</div>`; return; }
+    const allOn = rows.length > 0 && rows.every(r => SY.sel.has(r.name));
+    const sc = $('#syTable').scrollTop;
+    $('#syTable').innerHTML = `<table><thead><tr><th class="ck"><input type="checkbox" data-all="1" ${allOn ? 'checked' : ''} aria-label="전체 선택"></th><th>No.</th><th>상태</th><th>등록일</th><th>프로젝트명</th><th>프로젝트 그룹</th><th>TYPE</th><th>구분</th><th>시작 공정</th><th>배치</th><th>사이트 현재 공정</th></tr></thead><tbody>${rows.map(syRow).join('') || '<tr><td colspan="11" class="sy-empty">조건에 맞는 프로젝트가 없습니다</td></tr>'}</tbody></table>`;
+    $('#syTable').scrollTop = sc;
+  }
+  function doSync(list, label) {
+    list = list.filter(r => r.s.k === 'wait');
+    if (!list.length) { toast('동기화할 대기 건이 없습니다', true); return; }
+    if ((label !== '선택 동기화' || list.length > 1) && !confirm(`${label}: 대기 ${list.length}건을 프로젝트 관리 탭에 등록할까요?`)) return;
+    const items = list.map(r => ({ name: r.name, startStep: Number(SY.start[r.name] || 1), slot: SY.slot[r.name] || '' }));
+    mutate({ action: 'syncProjects', items }, `${items.length}건 동기화되었습니다`, (d, user) => {
+      const occ = {}; d.projects.forEach(x => { if (x.state === 'active' && x.slot) occ[Number(x.slot)] = true; });
+      items.forEach((it, k) => {
+        if (d.projects.some(x => x.state !== 'removed' && x.projectName === it.name)) return;
+        let slot = it.slot ? Number(it.slot) : null;
+        if (slot && (occ[slot] || (isPack(slot) && it.startStep < PACK_MIN_STEP))) slot = null;
+        if (slot) occ[slot] = true;
+        d.projects.push({
+          id: 'T' + Date.now() + '_' + k, slot, projectName: it.name, state: 'active', summaryProgress: '', summaryIssue: '',
+          createdAt: nowStr(), createdBy: user, updatedAt: nowStr(), updatedBy: user,
+          steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: s.no < it.startStep ? '완료' : '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
+        });
+        delete SY.start[it.name]; delete SY.slot[it.name]; SY.sel.delete(it.name);
+      });
+      SY.hist = null;
+    });
+  }
+  function doUnsync(list) {
+    const ps = list.filter(r => r.s.k === 'ok' && r.s.p.state === 'active').map(r => r.s.p);
+    if (!ps.length) return;
+    if (!confirm(`선택한 ${ps.length}건의 동기화를 취소할까요?\n\n프로젝트 관리 탭·진행현황에서 삭제되고(배치 해제) 목록은 '대기'로 돌아갑니다.\n입력한 공정 기록은 DB 시트와 변경 이력에 남습니다.`)) return;
+    const ids = ps.map(p => p.id);
+    mutate({ action: 'unsync', projectIds: ids }, `${ids.length}건 동기화를 취소했습니다`, d => {
+      d.projects = d.projects.filter(p => !ids.includes(p.id));
+      SY.sel.clear(); SY.hist = null;
+    });
+  }
+  function doExclude(list, on) {
+    const names = list.filter(r => r.s.k === (on ? 'wait' : 'ex')).map(r => r.name);
+    if (!names.length) return;
+    mutate({ action: 'exclude', names, on }, on ? `${names.length}건을 제외했습니다` : `${names.length}건 제외를 해제했습니다`, d => {
+      const s = new Set(d.syncExcluded || []); names.forEach(n => (on ? s.add(n) : s.delete(n))); d.syncExcluded = [...s];
+      SY.sel.clear(); SY.hist = null;
+    });
+  }
+
   // ===================== Events =====================
-  $$('.tab').forEach(t => t.addEventListener('click', () => { state.tab = t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0); }));
+  $$('.tab').forEach(t => t.addEventListener('click', () => { state.tab = t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0);
+    if (state.tab === 'sync') { if (!SY.rows) loadSync(false); else renderSync(); }
+  }));
+  $('#syView').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; SY.view = b.dataset.v; if (SY.view === 'hist') SY.hist = null; renderSync(); });
+  $('#syRefresh').addEventListener('click', () => { if (SY.view === 'hist') { SY.hist = null; renderSync(); } else loadSync(true); });
+  $('#syFrom').addEventListener('change', e => { SY.from = e.target.value; SY.quick = ''; renderSync(); });
+  $('#syTo').addEventListener('change', e => { SY.to = e.target.value; SY.quick = ''; renderSync(); });
+  $('#syQuick').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (!b) return; SY.quick = b.dataset.q; [SY.from, SY.to] = quickRange(SY.quick); renderSync(); });
+  $('#syStatus').addEventListener('change', e => { SY.st = e.target.value; renderSync(); });
+  $('#syGroup').addEventListener('change', e => { SY.group = e.target.value; renderSync(); });
+  $('#syQ').addEventListener('input', e => { SY.q = e.target.value.trim(); renderSync(); });
+  $('#syHide').addEventListener('click', () => { SY.hide = !SY.hide; LS.set('track.syncHide', SY.hide ? '1' : '0'); renderSync(); });
+  $('#syCond').addEventListener('click', () => doSync(syFiltered(), '조건부 동기화'));
+  $('#syAll').addEventListener('click', () => doSync(syAll(), '일괄 동기화'));
+  $('#sySel').addEventListener('click', () => doSync(sySel(), '선택 동기화'));
+  $('#syUnsync').addEventListener('click', () => doUnsync(sySel()));
+  $('#syEx').addEventListener('click', () => { const s = sySel(); if (s.some(r => r.s.k === 'wait')) doExclude(s, true); else doExclude(s, false); });
+  $('#syTable').addEventListener('change', e => {
+    const t = e.target; const d = t.dataset;
+    if (d.all) { syFiltered().forEach(r => (t.checked ? SY.sel.add(r.name) : SY.sel.delete(r.name))); }
+    else if (d.ck != null) { if (t.checked) SY.sel.add(d.ck); else SY.sel.delete(d.ck); }
+    else if (d.start != null) { SY.start[d.start] = Number(t.value); const sl = SY.slot[d.start]; if (sl && isPack(sl) && Number(t.value) < PACK_MIN_STEP) delete SY.slot[d.start]; SY.sel.add(d.start); }
+    else if (d.slot != null) { SY.slot[d.slot] = t.value; SY.sel.add(d.slot); }
+    renderSync();
+  });
+  $('#syTable').addEventListener('click', e => {
+    const o = e.target.closest('[data-open]'); if (o) { const p = findProject(o.dataset.open); if (p) { state.openStep = null; renderProject(p); } return; }
+    if (e.target.closest('input,select,button,label')) return;
+    const tr = e.target.closest('tr[data-name]'); if (!tr) return;
+    const n = tr.dataset.name; if (SY.sel.has(n)) SY.sel.delete(n); else SY.sel.add(n);
+    renderSync();
+  });
 
   const onCardClick = e => {
     const c = e.target.closest('.card'); if (!c) return;
@@ -807,16 +977,19 @@
       mk('P7', null, names[6], 0), mk('P8', null, names[7], 2),
       Object.assign(mk('P9', null, names[8], 14), { state: 'shipped' }),
     ];
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'] }));
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
-    const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
+    const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
+    const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: String(153 + i), name: n, type: 'IMMERSION TRACK', date: i < 7 ? '2026.06.11' : i < 12 ? '2026.08.' + String(4 + i) : '2026.10.' + String(10 + i), kind: n.startsWith('RD') ? '개발' : '양산' }));
+    const excluded = ['MISC-FER0 #1'];
     const occupied = (slot, selfId) => db.find(p => p.state === 'active' && Number(p.slot) === Number(slot) && p.id !== selfId);
     const isPackD = (slot) => layout.some(l => l.type === 'pack' && l.slot === Number(slot));
     const curNo = (p) => { const c = p.steps.find(s => s.status !== '완료' && s.status !== '생략'); return c ? c.stepNo : 15; };
     return {
       get(p) {
         if (p.action === 'projectNames') return wait({ ok: true, names });
-        if (p.action === 'history') return wait({ ok: true, rows: history.filter(r => (!p.projectId || r.projectId === p.projectId)) });
+        if (p.action === 'history') { const acts = String(p.actions || '').split(',').filter(Boolean); return wait({ ok: true, rows: history.filter(r => (!p.projectId || r.projectId === p.projectId) && (!acts.length || acts.includes(r.action))) }); }
+        if (p.action === 'refRows') return wait({ ok: true, rows: refRows });
         return wait(snap());
       },
       post(b) {
@@ -831,6 +1004,18 @@
           const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.steps.forEach(s => { if (s.stepNo < (b.startStep || 1)) s.status = '완료'; }); p.createdAt = now(); p.createdBy = b.user;
           db.push(p); log(b, '프로젝트 등록', p);
         }
+        if (b.action === 'syncProjects') {
+          (b.items || []).forEach((it, k) => {
+            if (db.some(x => x.state !== 'removed' && x.projectName === it.name)) return;
+            let slot = it.slot ? Number(it.slot) : null;
+            if (slot && (occupied(slot) || (isPackD(slot) && it.startStep < 11))) slot = null;
+            const np = mk('S' + Date.now() + k, slot, it.name, -1); np.steps.forEach(s => { if (s.stepNo < (it.startStep || 1)) s.status = '완료'; });
+            db.push(np); log(b, 'sync', np, null, '참조 시트 동기화 · ' + (slot ? slot + '번 배치' : '미배치'));
+          });
+          return wait(snap());
+        }
+        if (b.action === 'unsync') { db.forEach(x => { if ((b.projectIds || []).includes(x.id) && x.state === 'active') { log(b, 'unsync', x); x.state = 'removed'; x.slot = null; } }); return wait(snap()); }
+        if (b.action === 'exclude') { (b.names || []).forEach(n => { const i = excluded.indexOf(n); if (b.on && i < 0) excluded.push(n); if (!b.on && i >= 0) excluded.splice(i, 1); log(b, b.on ? 'exclude' : 'include', { id: '', projectName: n, slot: '' }); }); return wait(snap()); }
         const p = db.find(x => x.id === b.projectId);
         if (b.action === 'setSlot' && p) {
           if (b.slot && isPackD(b.slot) && curNo(p) < 11) return fail('패킹 칸에는 11번 공정 이상만 배치할 수 있습니다.');
@@ -862,6 +1047,8 @@
   load(false).then(() => {
     $('#plan').classList.remove('skeleton');
     loadNames(false).catch(() => null); // prefetch for instant registration
+    loadSync(false); // sync tab badge
   });
+  setInterval(() => { if (!document.hidden && !state.pending) loadSync(false); }, 600e3);
   setInterval(() => { if (!document.hidden) load(false); }, Math.max(20, CFG.REFRESH_SEC || 60) * 1000);
 })();

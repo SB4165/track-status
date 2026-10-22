@@ -63,11 +63,13 @@ const SHEETS = {
   Steps:    ['projectId', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'fileRequired', 'fileCount', 'fileCheckedAt', 'updatedAt', 'updatedBy'],
   Notes:    ['id', 'content', 'updatedAt', 'updatedBy'],
   History:  ['at', 'by', 'action', 'projectId', 'projectName', 'slot', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'detail'],
+  SyncState: ['name', 'state', 'at', 'by'],
 };
 
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -130,6 +132,7 @@ function doGet(e) {
     switch (p.action) {
       case 'projectNames': return json_({ ok: true, names: getProjectNames_(p.refresh === '1') });
       case 'history':      return json_({ ok: true, rows: getHistory_(p) });
+      case 'refRows':      return json_({ ok: true, rows: getRefRows_(p.refresh === '1'), serverTime: now_() });
       default:             return json_(Object.assign({ ok: true }, bootstrap_()));
     }
   } catch (err) {
@@ -157,6 +160,9 @@ function doPost(e) {
       case 'saveNote':      result = saveNote_(body); break;
       case 'updateProject': result = updateProject_(body); break;
       case 'skipTo':        result = skipTo_(body); break;
+      case 'syncProjects':  result = syncProjects_(body); break;
+      case 'unsync':        result = unsync_(body); break;
+      case 'exclude':       result = exclude_(body); break;
       default: throw new Error('Unknown action');
     }
     return json_(Object.assign({ ok: true }, result));
@@ -202,6 +208,32 @@ function getProjectNames_(refresh) {
   return names;
 }
 
+// Reference rows for the sync tab: J=No, L=name, M=TYPE, N=date, O=kind (M contains TRACK)
+function getRefRows_(refresh) {
+  const cache = CacheService.getScriptCache();
+  if (!refresh) {
+    const hit = cache.get('refRows');
+    if (hit) return JSON.parse(hit);
+  }
+  const ref = SpreadsheetApp.openById(REF_SPREADSHEET_ID);
+  const sh = ref.getSheets().find(s => s.getSheetId() === REF_SHEET_GID);
+  if (!sh) throw new Error('참조 시트 탭(gid=' + REF_SHEET_GID + ')을 찾을 수 없습니다.');
+  const last = sh.getLastRow();
+  if (last < 1) return [];
+  const vals = sh.getRange(1, 10, last, 6).getDisplayValues(); // J..O
+  const seen = {};
+  const rows = [];
+  vals.forEach(r => {
+    const name = String(r[2] || '').trim();
+    const type = String(r[3] || '').trim();
+    if (!name || type.toUpperCase().indexOf(REF_FILTER_TEXT) === -1 || seen[name]) return;
+    seen[name] = true;
+    rows.push({ no: String(r[0] || '').trim(), name: name, type: type, date: String(r[4] || '').trim(), kind: String(r[5] || '').trim() });
+  });
+  try { cache.put('refRows', JSON.stringify(rows), 600); } catch (_) { /* too large */ }
+  return rows;
+}
+
 // ===== Read =====
 function readTable_(name) {
   const sh = getDb_().getSheetByName(name);
@@ -242,14 +274,17 @@ function bootstrap_() {
   const notes = {};
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
-  return { layout, projects, notes, keyRequired, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
+  const syncExcluded = getDb_().getSheetByName('SyncState') ? readTable_('SyncState').filter(r => r.state === 'excluded').map(r => String(r.name)) : [];
+  return { layout, projects, notes, keyRequired, syncExcluded, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
   const from = String(p.from || '');
   const to = String(p.to || '');
   const pid = String(p.projectId || '');
+  const acts = String(p.actions || '').split(',').filter(String);
   return readTable_('History').filter(r => {
+    if (acts.length && acts.indexOf(String(r.action)) === -1) return false;
     const d = String(r.at).slice(0, 10);
     if (from && d < from) return false;
     if (to && d > to) return false;
@@ -284,6 +319,9 @@ function projectRow_(id) {
 
 // Full snapshot per change (for Excel export)
 function history_(by, action, proj, step, detail) {
+  appendText_(getDb_().getSheetByName('History'), histArr_(by, action, proj, step, detail));
+}
+function histArr_(by, action, proj, step, detail) {
   const h = SHEETS.History;
   const o = {
     at: now_(), by: by || '', action: action,
@@ -292,7 +330,11 @@ function history_(by, action, proj, step, detail) {
     startDate: step ? step.startDate : '', endDate: step ? step.endDate : '', owner: step ? step.owner : '',
     progress: step ? step.progress : '', issue: step ? step.issue : '', detail: detail || '',
   };
-  appendText_(getDb_().getSheetByName('History'), h.map(k => (o[k] === undefined || o[k] === null) ? '' : o[k]));
+  return h.map(k => (o[k] === undefined || o[k] === null) ? '' : String(o[k]));
+}
+function appendRowsText_(sh, rows) {
+  if (!rows.length) return;
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setNumberFormat('@').setValues(rows);
 }
 
 function touchProject_(row, user) {
@@ -466,5 +508,97 @@ function restore_(b) {
   ps.getRange(row, SHEETS.Projects.indexOf('state') + 1).setValue('active');
   touchProject_(row, b.user);
   history_(b.user, 'restore', proj, null, '진행중으로 복원 (미배치)');
+  return bootstrap_();
+}
+
+// ===== Sync tab (reference sheet -> Projects) =====
+function syncSheet_() {
+  const ss = getDb_();
+  let sh = ss.getSheetByName('SyncState');
+  if (!sh) {
+    sh = ss.insertSheet('SyncState');
+    sh.getRange(1, 1, 1, SHEETS.SyncState.length).setValues([SHEETS.SyncState]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// items: [{ name, startStep, slot }] ; existing names are skipped, unusable slots fall back to 미배치
+function syncProjects_(b) {
+  const items = Array.isArray(b.items) ? b.items : [];
+  if (!items.length) throw new Error('동기화할 프로젝트가 없습니다.');
+  const ss = getDb_();
+  const all = readTable_('Projects').filter(p => p.state === 'active' || p.state === 'shipped');
+  const taken = {};
+  const occ = {};
+  all.forEach(p => { taken[p.projectName] = true; if (p.state === 'active' && p.slot !== '') occ[Number(p.slot)] = true; });
+  const user = b.user || '';
+  const t = now_();
+  const base = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss');
+  const pRows = [], sRows = [], hRows = [], skipped = [];
+  items.forEach((it, k) => {
+    const name = String(it.name || '').trim();
+    if (!name) return;
+    if (taken[name]) { skipped.push(name); return; }
+    taken[name] = true;
+    const start = Math.min(Math.max(Number(it.startStep) || 1, 1), STEPS.length);
+    let slot = it.slot ? Number(it.slot) : '';
+    let note = '';
+    if (slot && (occ[slot] || (isPackSlot_(slot) && start < PACK_MIN_STEP))) { note = ' (' + slot + '번 배치 불가 → 미배치)'; slot = ''; }
+    if (slot) occ[slot] = true;
+    const id = base + ('00' + k).slice(-3) + Math.floor(Math.random() * 90 + 10);
+    pRows.push([id, String(slot), name, 'active', '', '', t, user, t, user]);
+    STEPS.forEach(s => sRows.push([id, s.no, s.name, s.no < start ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']));
+    hRows.push(histArr_(user, 'sync', { id: id, projectName: name, slot: slot }, null,
+      '참조 시트 동기화 · ' + (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작 (이전 공정 완료 처리)' : '') + note));
+  });
+  if (pRows.length) {
+    appendRowsText_(ss.getSheetByName('Projects'), pRows);
+    const st = ss.getSheetByName('Steps');
+    st.getRange(st.getLastRow() + 1, 1, sRows.length, sRows[0].length).setValues(sRows);
+    appendRowsText_(ss.getSheetByName('History'), hRows);
+  }
+  return Object.assign(bootstrap_(), { syncResult: { created: pRows.length, skipped: skipped } });
+}
+
+// cancel sync = remove the (active) projects from the board/management list; history is kept
+function unsync_(b) {
+  const ids = Array.isArray(b.projectIds) ? b.projectIds.map(String) : [];
+  if (!ids.length) throw new Error('취소할 프로젝트가 없습니다.');
+  const ss = getDb_();
+  const ps = ss.getSheetByName('Projects');
+  const si = SHEETS.Projects.indexOf('state') + 1;
+  const hRows = [];
+  readTable_('Projects').forEach(p => {
+    if (ids.indexOf(String(p.id)) === -1 || p.state !== 'active') return;
+    ps.getRange(p._row, 2).setValue('');
+    ps.getRange(p._row, si).setValue('removed');
+    touchProject_(p._row, b.user);
+    hRows.push(histArr_(b.user, 'unsync', p, null, p.slot !== '' ? p.slot + '번 비움' : ''));
+  });
+  appendRowsText_(ss.getSheetByName('History'), hRows);
+  return bootstrap_();
+}
+
+// exclude (on=true) / include (on=false) reference rows from the sync list
+function exclude_(b) {
+  const names = Array.isArray(b.names) ? b.names.map(n => String(n).trim()).filter(String) : [];
+  if (!names.length) throw new Error('대상이 없습니다.');
+  const on = b.on !== false;
+  const sh = syncSheet_();
+  const cur = {};
+  readTable_('SyncState').forEach(r => { cur[String(r.name)] = r._row; });
+  const t = now_();
+  const add = [], del = [], hRows = [];
+  names.forEach(n => {
+    if (on) {
+      if (cur[n]) sh.getRange(cur[n], 2, 1, 3).setValues([['excluded', t, b.user || '']]);
+      else add.push([n, 'excluded', t, b.user || '']);
+    } else if (cur[n]) del.push(cur[n]);
+    hRows.push(histArr_(b.user, on ? 'exclude' : 'include', { id: '', projectName: n, slot: '' }, null, ''));
+  });
+  appendRowsText_(sh, add);
+  del.sort((x, y) => y - x).forEach(r => sh.deleteRow(r));
+  appendRowsText_(getDb_().getSheetByName('History'), hRows);
   return bootstrap_();
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>트랙 업무 진행현황</title>
+  <title>트랙 진행현황</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="style.css">
@@ -12,12 +12,13 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="title">
-        <h1>트랙 업무 진행현황</h1>
+        <h1 class="logo"><img class="wm" src="ninebell-logo.png" alt="NINEBELL"><span class="lsep" aria-hidden="true"></span>트랙 진행현황</h1>
         <span class="sub" id="lastSync">불러오는 중…</span>
       </div>
       <nav class="tabs" role="tablist">
         <button class="tab on" role="tab" data-tab="board">진행현황</button>
         <button class="tab" role="tab" data-tab="projects">프로젝트 관리 <span class="cnt" id="projCnt"></span></button>
+        <button class="tab" role="tab" data-tab="sync">프로젝트 동기화 <span class="badge" id="syncCnt"></span></button>
       </nav>
       <div class="actions">
         <button class="btn ghost" id="userBtn" title="작성자 이름 변경">
@@ -65,6 +66,46 @@
         </div>
       </div>
       <div class="ptable" id="pTable"></div>
+    </section>
+
+    <!-- Sync view -->
+    <section id="viewSync" class="view" hidden>
+      <div class="sy-panel">
+        <div class="sy-ph">
+          <h3>참조 시트 프로젝트 동기화</h3>
+          <div class="sy-seg" id="syView"><button data-v="list" class="on">대기 목록</button><button data-v="hist">이력</button></div>
+          <span class="sy-meta" id="syMeta"></span>
+          <button class="btn sy-sp" id="syRefresh">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>새로고침
+          </button>
+        </div>
+        <div id="syList">
+          <div class="sy-f">
+            <span class="sy-lb">등록일</span>
+            <input type="date" class="sy-in" id="syFrom" aria-label="시작일"><span class="sy-tl">~</span><input type="date" class="sy-in" id="syTo" aria-label="종료일">
+            <div class="sy-q" id="syQuick"><button data-q="all" class="on">전체</button><button data-q="week">이번 주</button><button data-q="month">이번 달</button><button data-q="year">올해</button></div>
+            <select class="sy-in" id="syStatus"><option value="">상태 전체</option><option value="wait">대기</option><option value="ok">동기화 완료</option><option value="ex">제외</option></select>
+            <select class="sy-in" id="syGroup"></select>
+            <div class="search sy-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input type="search" id="syQ" placeholder="프로젝트명 검색">
+            </div>
+          </div>
+          <div class="sy-a">
+            <span class="sy-lb">동기화</span>
+            <button class="btn sy-go" id="syCond" title="현재 필터 조건의 대기 건을 모두 등록">조건부 동기화</button>
+            <button class="btn sy-go" id="syAll" title="모든 대기 건을 등록">일괄 동기화</button>
+            <span class="sy-lb sy-gap">선택한 건</span>
+            <button class="btn sy-go" id="sySel">선택 동기화</button>
+            <button class="btn" id="syUnsync">동기화 취소</button>
+            <button class="btn sy-bo" id="syEx">선택 제외</button>
+            <button class="btn sy-bo sy-sp" id="syHide">동기화 완료건 숨기기</button>
+          </div>
+          <div class="sy-tbl" id="syTable"></div>
+        </div>
+        <div id="syHist" hidden><div class="sy-tbl" id="syHistTable"></div></div>
+        <div class="sy-foot">· 참조 시트(공정별 부적합 관리대장 › 참조) L열 프로젝트 중 M열에 TRACK이 포함된 건만 표시 · 동기화 = 프로젝트 관리 탭에 등록 (시작 공정·배치 지정 가능) · 동기화 취소 = 프로젝트 관리 탭에서 삭제 · 동기화·취소·제외는 비밀번호 필요 (창을 닫을 때까지 유지) · 10분마다 자동 새로고침</div>
+      </div>
     </section>
   </main>
 
