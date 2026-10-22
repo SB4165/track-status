@@ -135,7 +135,8 @@
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
   // done-before-start rule; starting at the last step (출하완료) = every step done
   const startDone = (no, start, total) => no < start || start >= total;
-  const applySkipLocal = (p, n) => { const total = (p.steps || []).length; p.steps.forEach(s => { const no = Number(s.stepNo); if (startDone(no, n, total) && !['완료', '생략'].includes(s.status)) s.status = '완료'; if (!startDone(no, n, total) && s.status === '생략') s.status = '대기'; }); };
+  // starting at the last step (출하완료) also ships the project (moves to 출하완료, slot cleared)
+  const applySkipLocal = (p, n) => { const total = (p.steps || []).length; p.steps.forEach(s => { const no = Number(s.stepNo); if (startDone(no, n, total) && !['완료', '생략'].includes(s.status)) s.status = '완료'; if (!startDone(no, n, total) && s.status === '생략') s.status = '대기'; }); if (n >= total && p.state === 'active') { p.state = 'shipped'; p.slot = null; } };
   const fakeProj = (start) => { const defs = (state.data && state.data.stepDefs) || []; return { id: null, steps: defs.map(s => ({ stepNo: s.no, status: startDone(s.no, start, defs.length) ? '완료' : '대기' })) }; };
   const startOptions = (sel) => ((state.data && state.data.stepDefs) || []).map(s => `<option value="${s.no}" ${Number(sel) === s.no ? 'selected' : ''}>${s.no}. ${esc(s.name)}</option>`).join('');
   const packMsg = () => `패킹 칸에는 현재 공정이 ${PACK_MIN_STEP}번(${esc(((state.data && state.data.stepDefs) || [])[PACK_MIN_STEP - 1]?.name || '')}) 이상인 프로젝트만 배치할 수 있습니다.`;
@@ -392,7 +393,7 @@
       shipped: all.filter(p => p.state === 'shipped').length,
       all: all.length,
     };
-    const F = [['active', '진행중'], ['placed', '배치중'], ['unplaced', '미배치'], ['shipped', '출하완료'], ['all', '전체']];
+    const F = [['all', '전체'], ['active', '진행중'], ['placed', '배치중'], ['unplaced', '미배치'], ['shipped', '출하완료']];
     $('#pFilter').innerHTML = F.map(([k, l]) => `<button class="chip ${state.filter === k ? 'on' : ''}" data-f="${k}">${l}<b>${counts[k]}</b></button>`).join('');
     // project-set filter
     let gs = $('#pGroup');
@@ -431,7 +432,7 @@
     const ids = list.map(p => p.id);
     [...state.psel].forEach(id => { if (!ids.includes(id)) state.psel.delete(id); });
     const allOn = ids.length > 0 && ids.every(id => state.psel.has(id));
-    const bar = state.psel.size ? `<div class="bulkbar"><span>선택 <b>${state.psel.size}</b>건</span><span class="hint">현재 공정</span><select class="in" id="bulkStep">${startOptions(Number(LS.get('track.bulkStep')) || 1)}</select><button class="btn primary" id="bulkApply">일괄 적용</button><button class="btn ghost" id="bulkClear">선택 해제</button><span class="hint">선택한 공정 이전은 완료 처리 · 17. 출하완료를 고르면 전 공정 완료</span></div>` : '';
+    const bar = state.psel.size ? `<div class="bulkbar"><span>선택 <b>${state.psel.size}</b>건</span><span class="hint">현재 공정</span><select class="in" id="bulkStep">${startOptions(Number(LS.get('track.bulkStep')) || 1)}</select><button class="btn primary" id="bulkApply">일괄 적용</button><button class="btn ghost" id="bulkClear">선택 해제</button><span class="hint">선택한 공정 이전은 완료 처리 · 17. 출하완료를 고르면 전 공정 완료 + 출하완료로 이동</span></div>` : '';
     const head = bar + '<div class="prow head"><div class="ck"><input type="checkbox" data-pall="1" ' + (allOn ? 'checked' : '') + ' aria-label="전체 선택"></div><div>배치</div><div>프로젝트명</div><div>현재 공정</div><div>진척률</div><div>이슈</div><div>최종 수정</div><div></div></div>';
     $('#pTable').innerHTML = head + list.map(p => {
       const i = projectInfo(p);
@@ -605,7 +606,7 @@
       mutate({ action: 'createProject', projectName: name, slot, startStep: start, force: !!c.force, _tmp: tmp }, '등록되었습니다', (d, user) => {
         if (slot) d.projects.forEach(x => { if (x.state === 'active' && Number(x.slot) === Number(slot)) x.slot = null; });
         d.projects.push({
-          id: tmp, slot: slot ? Number(slot) : null, projectName: name, state: 'active', summaryProgress: '', summaryIssue: '',
+          id: tmp, slot: slot && start < d.stepDefs.length ? Number(slot) : null, projectName: name, state: start >= d.stepDefs.length ? 'shipped' : 'active', summaryProgress: '', summaryIssue: '',
           createdAt: nowStr(), createdBy: user, updatedAt: nowStr(), updatedBy: user,
           steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: startDone(s.no, start, d.stepDefs.length) ? '완료' : '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
         });
@@ -842,7 +843,7 @@
         if (slot && (occ[slot] || (isPack(slot) && it.startStep < PACK_MIN_STEP))) slot = null;
         if (slot) occ[slot] = true;
         d.projects.push({
-          id: 'T' + Date.now() + '_' + k, slot, projectName: it.name, state: 'active', summaryProgress: '', summaryIssue: '',
+          id: 'T' + Date.now() + '_' + k, slot: it.startStep >= d.stepDefs.length ? null : slot, projectName: it.name, state: it.startStep >= d.stepDefs.length ? 'shipped' : 'active', summaryProgress: '', summaryIssue: '',
           createdAt: nowStr(), createdBy: user, updatedAt: nowStr(), updatedBy: user,
           steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: startDone(s.no, it.startStep, d.stepDefs.length) ? '완료' : '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
         });
@@ -965,7 +966,7 @@
     const ids = [...state.psel]; if (!ids.length) return;
     const n = Number($('#bulkStep').value); const def = (state.data.stepDefs || [])[n - 1] || {};
     const last = n >= (state.data.stepDefs || []).length;
-    if (!confirm(`선택한 ${ids.length}건의 현재 공정을 '${n}. ${def.name}'(으)로 맞출까요?\n\n${last ? '출하완료: 전 공정이 완료 처리됩니다.' : n + '번 이전 공정은 완료 처리되고, 기존 완료 기록은 유지됩니다.'}`)) return;
+    if (!confirm(`선택한 ${ids.length}건의 현재 공정을 '${n}. ${def.name}'(으)로 맞출까요?\n\n${last ? '출하완료: 전 공정이 완료 처리되고 출하완료 목록으로 이동합니다 (배치 해제).' : n + '번 이전 공정은 완료 처리되고, 기존 완료 기록은 유지됩니다.'}`)) return;
     mutate({ action: 'bulkSkipTo', projectIds: ids, stepNo: n }, `${ids.length}건 적용되었습니다`, d => {
       ids.forEach(id => { const p = byId(d, id); if (p) { applySkipLocal(p, n); p.updatedAt = nowStr(); } });
       state.psel.clear();
@@ -1146,7 +1147,7 @@
           const occ = b.slot && occupied(b.slot);
           if (occ && !b.force) return fail('이미 배치됨');
           if (occ) occ.slot = null;
-          const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.steps.forEach(s => { if (startDone(s.stepNo, b.startStep || 1, STEPS.length)) s.status = '완료'; }); p.createdAt = now(); p.createdBy = b.user;
+          const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.steps.forEach(s => { if (startDone(s.stepNo, b.startStep || 1, STEPS.length)) s.status = '완료'; }); if ((b.startStep || 1) >= STEPS.length) { p.state = 'shipped'; p.slot = null; } p.createdAt = now(); p.createdBy = b.user;
           db.push(p); log(b, '프로젝트 등록', p);
         }
         if (b.action === 'syncProjects') {
@@ -1154,7 +1155,7 @@
             if (db.some(x => x.state !== 'removed' && x.projectName === it.name)) return;
             let slot = it.slot ? Number(it.slot) : null;
             if (slot && (occupied(slot) || (isPackD(slot) && it.startStep < PACK_MIN_STEP))) slot = null;
-            const np = mk('S' + Date.now() + k, slot, it.name, -1); np.steps.forEach(s => { if (startDone(s.stepNo, it.startStep || 1, STEPS.length)) s.status = '완료'; });
+            const np = mk('S' + Date.now() + k, slot, it.name, -1); np.steps.forEach(s => { if (startDone(s.stepNo, it.startStep || 1, STEPS.length)) s.status = '완료'; }); if ((it.startStep || 1) >= STEPS.length) { np.state = 'shipped'; np.slot = null; }
             db.push(np); log(b, 'sync', np, null, '참조 시트 동기화 · ' + (slot ? slot + '번 배치' : '미배치'));
           });
           return wait(snap());
