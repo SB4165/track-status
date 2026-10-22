@@ -116,7 +116,7 @@
   }
   function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
-  const fakeProj = (start) => ({ id: null, steps: ((state.data && state.data.stepDefs) || []).map(s => ({ stepNo: s.no, status: s.no < start ? '생략' : '대기' })) });
+  const fakeProj = (start) => ({ id: null, steps: ((state.data && state.data.stepDefs) || []).map(s => ({ stepNo: s.no, status: s.no < start ? '완료' : '대기' })) });
   const startOptions = (sel) => ((state.data && state.data.stepDefs) || []).map(s => `<option value="${s.no}" ${Number(sel) === s.no ? 'selected' : ''}>${s.no}. ${esc(s.name)}</option>`).join('');
   const packMsg = () => `패킹 칸에는 현재 공정이 ${PACK_MIN_STEP}번(패킹리스트 확인) 이상인 프로젝트만 배치할 수 있습니다.`;
 
@@ -462,7 +462,7 @@
           <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumIssue" rows="3" placeholder="이슈 없음" data-auto="${esc(i.autoIssue)}">${esc(i.issue)}</textarea></label>
         </div>
         <div class="row-end between" style="flex-wrap:wrap">
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 생략 처리">이 공정부터 진행</button></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 완료 처리">이 공정부터 진행</button></div>
           <div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>
         </div>
         <div class="hint" style="margin-top:6px">자동 초안은 공정 기록이 바뀔 때마다 새로 작성됩니다. 내용을 고쳐 저장하면 '직접 작성'으로 고정됩니다.</div>
@@ -499,7 +499,7 @@
         <label class="f">시작 공정<select class="in" id="regStart">${startOptions(1)}</select></label>
         <label class="f">배치 (선택)<select class="in" id="regSlot">${slotOptions(mode.slot || '', fakeProj(1))}</select></label>
       </div>
-      <div class="hint" style="margin-top:6px">시작 공정 이전 공정은 '생략'으로 등록됩니다. 패킹 칸은 ${PACK_MIN_STEP}번 공정 이상일 때 배치할 수 있습니다.</div>`}
+      <div class="hint" style="margin-top:6px">시작 공정 이전 공정은 '완료'로 등록됩니다. 패킹 칸은 ${PACK_MIN_STEP}번 공정 이상일 때 배치할 수 있습니다.</div>`}
       <div class="row-end between">
         <button class="btn ghost" id="reloadNames">목록 새로고침</button>
         <button class="btn primary" id="regBtn" disabled>${editP ? '변경' : '등록'}</button>
@@ -540,7 +540,7 @@
         d.projects.push({
           id: tmp, slot: slot ? Number(slot) : null, projectName: name, state: 'active', summaryProgress: '', summaryIssue: '',
           createdAt: nowStr(), createdBy: user, updatedAt: nowStr(), updatedBy: user,
-          steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: s.no < start ? '생략' : '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
+          steps: (d.stepDefs || []).map(s => ({ stepNo: s.no, stepName: s.name, status: s.no < start ? '완료' : '대기', startDate: '', endDate: '', owner: '', progress: '', issue: '', fileRequired: s.file, fileCount: '', fileCheckedAt: '', updatedAt: '', updatedBy: '' })),
         });
       }, () => { state.openStep = null; renderProject(findProject(tmp)); });
     });
@@ -740,9 +740,9 @@
     }
     if (id === 'skipBtn') {
       const n = Number($('#skipSel').value);
-      mutate({ action: 'skipTo', projectId: pid, stepNo: n }, `${n}번 공정부터 진행합니다`, d => {
+      mutate({ action: 'skipTo', projectId: pid, stepNo: n }, `${n}번 공정부터 진행합니다 (이전 공정 완료 처리)`, d => {
         const p = byId(d, pid); if (!p) return;
-        p.steps.forEach(s => { const no = Number(s.stepNo); if (no < n && !['완료', '생략'].includes(s.status)) s.status = '생략'; if (no >= n && s.status === '생략') s.status = '대기'; });
+        p.steps.forEach(s => { const no = Number(s.stepNo); if (no < n && !['완료', '생략'].includes(s.status)) s.status = '완료'; if (no >= n && s.status === '생략') s.status = '대기'; });
         state.openStep = n;
       });
     }
@@ -828,7 +828,7 @@
           const occ = b.slot && occupied(b.slot);
           if (occ && !b.force) return fail('이미 배치됨');
           if (occ) occ.slot = null;
-          const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.steps.forEach(s => { if (s.stepNo < (b.startStep || 1)) s.status = '생략'; }); p.createdAt = now(); p.createdBy = b.user;
+          const p = mk('P' + Date.now(), b.slot ? Number(b.slot) : null, b.projectName, -1); p.steps.forEach(s => { if (s.stepNo < (b.startStep || 1)) s.status = '완료'; }); p.createdAt = now(); p.createdBy = b.user;
           db.push(p); log(b, '프로젝트 등록', p);
         }
         const p = db.find(x => x.id === b.projectId);
@@ -839,7 +839,7 @@
           if (occ) occ.slot = null;
           p.slot = b.slot ? Number(b.slot) : null; log(b, '배치 변경', p);
         }
-        if (b.action === 'skipTo' && p) { p.steps.forEach(s => { if (s.stepNo < b.stepNo && !['완료', '생략'].includes(s.status)) s.status = '생략'; if (s.stepNo >= b.stepNo && s.status === '생략') s.status = '대기'; }); log(b, '시작 공정 지정', p); }
+        if (b.action === 'skipTo' && p) { p.steps.forEach(s => { if (s.stepNo < b.stepNo && !['완료', '생략'].includes(s.status)) s.status = '완료'; if (s.stepNo >= b.stepNo && s.status === '생략') s.status = '대기'; }); log(b, '시작 공정 지정', p); }
         if (b.action === 'updateProject' && p) { log(b, '프로젝트명 수정', p, null, p.projectName + ' → ' + b.projectName); p.projectName = b.projectName; }
         if (b.action === 'saveStep' && p) {
           const s = p.steps.find(x => x.stepNo === b.stepNo);

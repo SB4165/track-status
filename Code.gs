@@ -341,10 +341,10 @@ function createProject_(b) {
   const id = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + Math.floor(Math.random() * 90 + 10);
   const t = now_();
   appendText_(ps, [id, slot, name, 'active', '', '', t, b.user || '', t, b.user || '']);
-  const rows = STEPS.map(s => [id, s.no, s.name, s.no < start ? '생략' : '대기', '', '', '', '', '', s.file, '', '', '', '']);
+  const rows = STEPS.map(s => [id, s.no, s.name, s.no < start ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']);
   const st = ss.getSheetByName('Steps');
   st.getRange(st.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-  history_(b.user, 'create', { id: id, projectName: name, slot: slot }, null, (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작' : ''));
+  history_(b.user, 'create', { id: id, projectName: name, slot: slot }, null, (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작 (이전 공정 완료 처리)' : ''));
   return bootstrap_();
 }
 
@@ -420,7 +420,7 @@ function saveNote_(b) {
   return bootstrap_();
 }
 
-// steps before stepNo: not completed -> 생략 ; steps from stepNo: 생략 -> 대기 (completed records are kept)
+// steps before stepNo: not completed -> 완료 (work done, records just not entered) ; steps from stepNo: 생략 -> 대기
 function skipTo_(b) {
   const n = Number(b.stepNo);
   if (!n) throw new Error('시작 공정이 필요합니다.');
@@ -431,13 +431,13 @@ function skipTo_(b) {
     if (vals[i][0] !== b.projectId) continue;
     const no = Number(vals[i][1]); const s = vals[i][si];
     let ns = s;
-    if (no < n && s !== '완료' && s !== '생략') ns = '생략';
+    if (no < n && s !== '완료' && s !== '생략') ns = '완료';
     if (no >= n && s === '생략') ns = '대기';
     if (ns !== s) st.getRange(i + 1, si + 1, 1, 1).setNumberFormat('@').setValue(ns);
   }
   const prow = projectRow_(b.projectId);
   touchProject_(prow, b.user);
-  history_(b.user, 'skip', rowObj_('Projects', prow), null, n + '번 공정부터 진행 (이전 미완료 공정 생략)');
+  history_(b.user, 'skip', rowObj_('Projects', prow), null, n + '번 공정부터 진행 (이전 공정 완료 처리)');
   return bootstrap_();
 }
 
