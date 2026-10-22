@@ -113,7 +113,9 @@
     return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
   }
   // compress free text into a short summary: split numbered/line items, drop numbering and
-  // non-numeric (…) notes, shorten each item to fit a ~32-char budget, join with ' · '
+  // non-numeric (…) notes, shorten each item, one item per line
+  // put each numbered item ('2. ', '3) ') on its own line
+  const lineBreaks = (t) => String(t || '').replace(/[ \t]+(?=\d{1,2}[.)]\s+\S)/g, '\n').trim();
   function summarize(text) {
     const t = String(text || '').replace(/\r/g, '').trim();
     if (!t) return '';
@@ -123,13 +125,14 @@
         .replace(/\s+/g, ' ').replace(/[\s,.;:]+$/, '').trim())
       .filter(Boolean);
     if (!items.length) return '';
-    const limit = Math.max(12, Math.floor(32 / items.length));
+    // one line per item (numbered when there are several), each shortened to ~22 chars
+    const limit = items.length > 1 ? 22 : 44;
     const cut = (x) => {
       if (x.length <= limit) return x;
       const s = x.slice(0, limit); const sp = s.lastIndexOf(' ');
       return (sp >= limit * 0.6 ? s.slice(0, sp) : s).replace(/[\s,.(]+$/, '').replace(/\s+(및|와|과|그리고|or|and)$/i, '') + '…';
     };
-    return items.map(cut).join(' · ');
+    return items.length > 1 ? items.map((x, k) => `${k + 1}. ${cut(x)}`).join('\n') : cut(items[0]);
   }
   function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
@@ -282,12 +285,21 @@
     if (state.tab === 'board') fitCards();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
+  // each of 진행/이슈 shows up to 3 lines; when the card is full, the longer block gives up a line first (min 1 each).
+  // Hidden text ends with '…', the full text is in the tooltip and the detail window.
   function fitCards() {
     $$('#plan .card[data-pid]').forEach(c => {
-      const ds = $$('.sum > div', c); if (!ds.length) return;
-      for (let n = 3; n >= 1; n--) {
-        ds.forEach(d => { d.style.webkitLineClamp = n; });
-        if (c.scrollHeight <= c.clientHeight + 1) break;
+      const vs = $$('.sum .v', c); if (!vs.length) return;
+      const lines = vs.map(() => 3);
+      const apply = () => vs.forEach((v, k) => { v.style.webkitLineClamp = lines[k]; });
+      apply();
+      let guard = 6;
+      while (c.scrollHeight > c.clientHeight + 1 && guard--) {
+        const used = vs.map((v, k) => Math.min(lines[k], Math.round(v.scrollHeight / (parseFloat(getComputedStyle(v).lineHeight) || 14))));
+        let k = used[0] >= used[1] ? 0 : 1; if (vs.length < 2) k = 0;
+        if (lines[k] <= 1) k = 1 - k;
+        if (!vs[k] || lines[k] <= 1) break;
+        lines[k] = Math.min(lines[k], used[k]) - 1 || 1; apply();
       }
     });
   }
@@ -311,8 +323,8 @@
       <div class="segs">${segs}</div>
       <div class="pct">${i.done}/${i.total} 완료 · ${i.pct}%</div>
       <div class="sum">
-        <div title="${esc(i.progTip)}"><span class="t">진행</span>${esc(i.prog)}</div>
-        <div class="${i.issue ? 'issue' : ''}" title="${esc(i.issueTip)}"><span class="t">이슈</span>${i.issue ? esc(i.issue) : '<span class="muted">없음</span>'}</div>
+        <div class="row" title="${esc(i.progTip)}"><span class="t">진행</span><span class="v">${esc(lineBreaks(i.prog))}</span></div>
+        <div class="row ${i.issue ? 'issue' : ''}" title="${esc(i.issueTip)}"><span class="t">이슈</span><span class="v">${i.issue ? esc(lineBreaks(i.issue)) : '<span class="muted">없음</span>'}</span></div>
       </div>
     </button>`;
   }
@@ -446,7 +458,7 @@
         <div class="nm">${esc(p.projectName)}<small>${esc(groupOf(p.projectName))} · 등록 ${esc(String(p.createdAt || '').slice(0, 10))}${p.createdBy ? ' · ' + esc(p.createdBy) : ''}</small></div>
         <div class="cs">${cs}</div>
         <div class="pg"><div class="bar"><i style="width:${i.pct}%"></i></div><span>${i.done}/${i.total} · ${i.pct}%</span></div>
-        <div class="is ${i.issue ? '' : 'none'}">${i.issue ? esc(i.issue) : '이슈 없음'}</div>
+        <div class="is ${i.issue ? '' : 'none'}" title="${esc(i.issueTip)}">${i.issue ? esc(lineBreaks(i.issue)) : '이슈 없음'}</div>
         <div class="dt">${esc(p.updatedAt || '')}</div>
         <div class="act">
           <button class="ib" data-edit="${esc(p.id)}" title="프로젝트명 수정" aria-label="수정"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button>

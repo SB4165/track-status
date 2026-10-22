@@ -452,10 +452,11 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .sy-tbl th.sorted .ar { color: var(--accent); }
 @media (max-width: 640px) { .sync-at { font-size: 10px; max-width: 108px; white-space: normal; text-align: right; } .title h1.logo { overflow: hidden; } }
 
-}
-
 /* summaries: up to 3 lines on cards (full text on hover) */
-.sum div { -webkit-line-clamp: 3; }
+.sum > .row { display: flex; align-items: flex-start; gap: .3em; overflow: visible; }
+.sum .t { flex: none; margin-right: 0; }
+.sum .v { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: pre-line; line-height: 1.35; }
+.prow .is { white-space: pre-line; }
 
 /* projects tab: row selection + bulk current-step bar */
 .prow { grid-template-columns: 22px 112px minmax(180px, 1.6fr) minmax(170px, 1.4fr) 150px minmax(120px, 1.2fr) 96px 68px; }
@@ -475,3 +476,6 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .shipbadge { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px; background: #e8eefe; color: #2f49c9; border: 1px solid #c3d0fb; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .shipbadge svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 @media (prefers-color-scheme: dark) { .shipbadge { background: #1c2547; color: #9db2ff; border-color: #34437a; } }
+/* card: progress segments always one row (any number of steps); summary right under the progress */
+.segs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; }
+.sum { margin-top: .5em; }
