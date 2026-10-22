@@ -39,35 +39,35 @@ const STEPS = [
 //  v3: inserted 12 (클리닝)
 const STEPS_VERSION = '3';
 
-// Floor plan on a 1000 x 700 canvas (same orientation as the CAD drawing).
+// Floor plan on a 1000-wide canvas (height = lowest item + margin) (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
 // type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
-const LAYOUT_VERSION = '6';
+const LAYOUT_VERSION = '7';
 const PACK_MIN_STEP = 12; // 클리닝(제조)
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
 const DEFAULT_LAYOUT = [
-  ['wall-top',  'wall',    '', '',                        90,   8, 865,  52, true],
-  ['wall-left', 'wall',    '', '',                         8, 290,  52, 370, true],
-  ['slot-3',    'slot',     3, 'MPR, EMR, ITR',           95,  72, 132, 218, true],
-  ['slot-4',    'slot',     4, 'STR, ESR',               240,  72, 132, 218, true],
-  ['slot-5',    'slot',     5, 'STR, ESR',               385,  72, 132, 218, true],
-  ['slot-6',    'slot',     6, 'MPR',                    530,  72, 132, 218, true],
-  ['slot-7',    'slot',     7, 'ITR, EMR',               675,  72, 132, 218, true],
-  ['slot-8',    'slot',     8, 'FER',                    820,  72, 132, 218, true],
-  ['slot-2',    'slot',     2, 'MPR, ITR',                70, 302, 165, 172, true],
-  ['slot-1',    'slot',     1, 'MPR',                     70, 486, 165, 172, true],
-  ['door-1',    'door',    '', '출입문',                  70, 664, 165,  32, true],
-  ['pack-1',    'pack',     9, '패킹 1',                 255, 310, 130, 186, true],
-  ['pack-2',    'pack',    10, '패킹 2',                 393, 310, 130, 186, true],
-  ['pack-3',    'pack',    11, '패킹 3',                 531, 310, 130, 186, true],
-  ['pack-4',    'pack',    12, '패킹 4',                 669, 310, 130, 186, true],
-  ['pack-5',    'pack',    13, '패킹 5',                 255, 504, 130, 186, true],
-  ['pack-6',    'pack',    14, '패킹 6',                 393, 504, 130, 186, true],
-  ['pack-7',    'pack',    15, '패킹 7',                 531, 504, 130, 186, true],
-  ['pack-8',    'pack',    16, '패킹 8',                 669, 504, 130, 186, true],
-  ['note-1',    'note',    '', '기타사항',               815, 310, 175, 380, true],
+  ['wall-top',  'wall',    '', '',                         40,   6, 952,  18, true],
+  ['wall-left', 'wall',    '', '',                           8, 235,  24, 388, true],
+  ['slot-3',    'slot',     3, 'MPR, EMR, ITR',            40,  30, 152, 195, true],
+  ['slot-4',    'slot',     4, 'STR, ESR',               200,  30, 152, 195, true],
+  ['slot-5',    'slot',     5, 'STR, ESR',               360,  30, 152, 195, true],
+  ['slot-6',    'slot',     6, 'MPR',                    520,  30, 152, 195, true],
+  ['slot-7',    'slot',     7, 'ITR, EMR',               680,  30, 152, 195, true],
+  ['slot-8',    'slot',     8, 'FER',                    840,  30, 152, 195, true],
+  ['slot-2',    'slot',     2, 'MPR, ITR',                 40, 235, 192, 176, true],
+  ['slot-1',    'slot',     1, 'MPR',                      40, 417, 192, 176, true],
+  ['door-1',    'door',    '', '출입문',                   40, 599, 192,  24, true],
+  ['pack-1',    'pack',     9, '패킹 1',                 244, 235, 140, 190, true],
+  ['pack-2',    'pack',    10, '패킹 2',                 392, 235, 140, 190, true],
+  ['pack-3',    'pack',    11, '패킹 3',                 540, 235, 140, 190, true],
+  ['pack-4',    'pack',    12, '패킹 4',                 688, 235, 140, 190, true],
+  ['pack-5',    'pack',    13, '패킹 5',                 244, 433, 140, 190, true],
+  ['pack-6',    'pack',    14, '패킹 6',                 392, 433, 140, 190, true],
+  ['pack-7',    'pack',    15, '패킹 7',                 540, 433, 140, 190, true],
+  ['pack-8',    'pack',    16, '패킹 8',                 688, 433, 140, 190, true],
+  ['note-1',    'note',    '', '기타사항',               840, 235, 152, 388, true],
 ];
 
 const SHEETS = {

@@ -100,15 +100,36 @@
     const pct = Math.round(done / total * 100);
     // auto drafts (used when no manual summary is saved)
     // content only: current step's progress text; blank when nothing was entered
-    const autoProg = cur ? String(cur.progress || '').trim() : '';
+    const progFull = cur ? String(cur.progress || '').trim() : '';
+    const autoProg = summarize(progFull);
     const issueSteps = steps.filter(s => !isDone(s) && (String(s.issue || '').trim() || s.status === '조치중' || s.status === '보류'));
     // content only (no 'step(status):' prefix); a held/fixing step without text falls back to its name
-    const autoIssue = issueSteps.map(s => String(s.issue || '').trim() || `${s.stepNo}. ${s.stepName}(${s.status})`).join(' / ');
+    const issueFull = issueSteps.map(s => String(s.issue || '').trim() || `${s.stepNo}. ${s.stepName}(${s.status})`).join(' / ');
+    const autoIssue = summarize(issueSteps.map(s => String(s.issue || '').trim() || `${s.stepName}(${s.status})`).join('\n'));
     const manualProg = String(p.summaryProgress || '').trim();
     const manualIssue = String(p.summaryIssue || '').trim();
     const prog = manualProg || autoProg;
     const issue = manualIssue || autoIssue;
-    return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
+    return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
+  }
+  // compress free text into a short summary: split numbered/line items, drop numbering and
+  // non-numeric (…) notes, shorten each item to fit a ~32-char budget, join with ' · '
+  function summarize(text) {
+    const t = String(text || '').replace(/\r/g, '').trim();
+    if (!t) return '';
+    const items = t.split(/\n+|\s*\/\s+|(?:^|\s)(?=\d{1,2}[.)]\s*\S)/)
+      .map(x => x.replace(/^\s*\d{1,2}[.)]\s*/, '').replace(/^[-·•*]\s*/, '')
+        .replace(/\s*[(（][^()（）]*[)）]/g, m => (/\d/.test(m) ? m : ''))
+        .replace(/\s+/g, ' ').replace(/[\s,.;:]+$/, '').trim())
+      .filter(Boolean);
+    if (!items.length) return '';
+    const limit = Math.max(12, Math.floor(32 / items.length));
+    const cut = (x) => {
+      if (x.length <= limit) return x;
+      const s = x.slice(0, limit); const sp = s.lastIndexOf(' ');
+      return (sp >= limit * 0.6 ? s.slice(0, sp) : s).replace(/[\s,.(]+$/, '').replace(/\s+(및|와|과|그리고|or|and)$/i, '') + '…';
+    };
+    return items.map(cut).join(' · ');
   }
   function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
@@ -250,15 +271,28 @@
     fitPlan();
   }
   // desktop: shrink the floor plan so the whole board fits in one screen (easy to capture)
+  // canvas is 1000 wide; height follows the layout (lowest item + margin)
+  const planH = () => Math.max(300, ...((state.data && state.data.layout) || []).map(l => Number(l.y) + Number(l.h) + 8));
   function fitPlan() {
     const wrap = $('.plan-wrap'); if (!wrap) return;
     wrap.style.width = '';
     if (state.tab !== 'board' || window.innerWidth <= 900) return;
     const top = wrap.getBoundingClientRect().top + window.scrollY;
     const full = wrap.parentElement.clientWidth;
-    const fit = (window.innerHeight - top - 14) * 1000 / 700;
+    const fit = (window.innerHeight - top - 14) * 1000 / planH();
     const w = Math.max(Math.min(full, 840), Math.min(full, fit));
     if (w < full) wrap.style.width = Math.floor(w) + 'px';
+    fitCards();
+  }
+  // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
+  function fitCards() {
+    $$('#plan .card[data-pid]').forEach(c => {
+      const ds = $$('.sum > div', c); if (!ds.length) return;
+      for (let n = 3; n >= 1; n--) {
+        ds.forEach(d => { d.style.webkitLineClamp = n; });
+        if (c.scrollHeight <= c.clientHeight + 1) break;
+      }
+    });
   }
   window.addEventListener('resize', () => { clearTimeout(fitPlan._t); fitPlan._t = setTimeout(fitPlan, 80); });
 
@@ -280,8 +314,8 @@
       <div class="segs">${segs}</div>
       <div class="pct">${i.done}/${i.total} 완료 · ${i.pct}%</div>
       <div class="sum">
-        <div><span class="t">진행</span>${esc(i.prog)}</div>
-        <div class="${i.issue ? 'issue' : ''}"><span class="t">이슈</span>${i.issue ? esc(i.issue) : '<span class="muted">없음</span>'}</div>
+        <div title="${esc(i.progTip)}"><span class="t">진행</span>${esc(i.prog)}</div>
+        <div class="${i.issue ? 'issue' : ''}" title="${esc(i.issueTip)}"><span class="t">이슈</span>${i.issue ? esc(i.issue) : '<span class="muted">없음</span>'}</div>
       </div>
     </button>`;
   }
@@ -303,6 +337,7 @@
       ['이슈 있음', issues, issues ? 'warn' : ''],
     ].map(([k, v, c]) => `<div class="stat ${c || ''}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
 
+    $('#plan').style.setProperty('--ch', planH());
     $('#plan').innerHTML = d.layout.map(it => {
       const st = `--x:${it.x};--y:${it.y};--w:${it.w};--h:${it.h}`;
       if (it.type === 'wall') return `<div class="pl wall" style="${st}"></div>`;
@@ -314,6 +349,7 @@
       if (it.type === 'note') return `<div class="pl" style="${st}">${noteHTML(it)}</div>`;
       return '';
     }).join('');
+    requestAnimationFrame(fitCards);
 
     const notes = d.layout.filter(l => l.type === 'note');
     $('#slotList').innerHTML = (notes.length ? '<div class="sec-t" style="grid-column:1/-1">기타사항</div>' + notes.map(noteHTML).join('') : '')
@@ -1041,13 +1077,12 @@
     const FILE = [4, 5, 6, 7, 8, 9, 10, 14, 15];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
-      L('wall-top', 'wall', null, '', 90, 8, 865, 52), L('wall-left', 'wall', null, '', 8, 290, 52, 370),
-      L('slot-3', 'slot', 3, 'MPR, EMR, ITR', 95, 72, 132, 218), L('slot-4', 'slot', 4, 'STR, ESR', 240, 72, 132, 218), L('slot-5', 'slot', 5, 'STR, ESR', 385, 72, 132, 218),
-      L('slot-6', 'slot', 6, 'MPR', 530, 72, 132, 218), L('slot-7', 'slot', 7, 'ITR, EMR', 675, 72, 132, 218), L('slot-8', 'slot', 8, 'FER', 820, 72, 132, 218),
-      L('slot-2', 'slot', 2, 'MPR, ITR', 70, 302, 165, 172), L('slot-1', 'slot', 1, 'MPR', 70, 486, 165, 172),
-      L('door-1', 'door', null, '출입문', 70, 664, 165, 32),
-      ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 255 + (i % 4) * 138, i < 4 ? 310 : 504, 130, 186)),
-      L('note-1', 'note', null, '기타사항', 815, 310, 175, 380),
+      L('wall-top', 'wall', null, '', 40, 6, 952, 18), L('wall-left', 'wall', null, '', 8, 235, 24, 388),
+      ...['MPR, EMR, ITR', 'STR, ESR', 'STR, ESR', 'MPR', 'ITR, EMR', 'FER'].map((t, i) => L('slot-' + (i + 3), 'slot', i + 3, t, 40 + i * 160, 30, 152, 195)),
+      L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 176), L('slot-1', 'slot', 1, 'MPR', 40, 417, 192, 176),
+      L('door-1', 'door', null, '출입문', 40, 599, 192, 24),
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 244 + (i % 4) * 148, i < 4 ? 235 : 433, 140, 190)),
+      L('note-1', 'note', null, '기타사항', 840, 235, 152, 388),
     ];
     const notes = { 'note-1': { content: '10/24(금) 클린룸 정기 점검 예정\n메인 전기 차단기 위치 이동 작업 대기', updatedAt: '2026-10-21 09:00', updatedBy: '곽승범' } };
     const names = ['RD-SH-13-013 EMR#1', 'RD-SH-13-013 ESR#2', 'RD-SH-13-013 ESR#3', 'RD-SH-13-013 FER#0', 'RD-SH-13-013 MPR#4', 'RD-SH-13-013 MPR#5', 'RD-SH-13-013 MPR#6', 'MISC-STR10 #1', 'MISC-STR11 #1', 'MISC-FER0 #1', 'MISC-MPR7 #1', 'MISC-MPR9 #1'];

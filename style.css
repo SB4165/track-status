@@ -99,13 +99,13 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 /* ===== Floor plan ===== */
 .plan-wrap { container-type: inline-size; container-name: plan; }
 .plan {
-  position: relative; width: 100%; aspect-ratio: 1000 / 700;
+  position: relative; width: 100%; aspect-ratio: 1000 / var(--ch, 700);
   background-color: var(--floor);
   background-image: radial-gradient(var(--floor-dot) 1px, transparent 1px); background-size: 16px 16px;
   border: 2px solid var(--wall); border-radius: 14px; overflow: hidden;
   font-size: clamp(9px, 1.12cqw, 14px);
 }
-.pl { position: absolute; left: calc(var(--x) * 0.1%); top: calc(var(--y) * 0.142857%); width: calc(var(--w) * 0.1%); height: calc(var(--h) * 0.142857%); }
+.pl { position: absolute; left: calc(var(--x) * 0.1%); top: calc(var(--y) * 100% / var(--ch, 700)); width: calc(var(--w) * 0.1%); height: calc(var(--h) * 100% / var(--ch, 700)); }
 .pl.wall { background: repeating-linear-gradient(45deg, var(--wall) 0 6px, color-mix(in srgb, var(--wall) 70%, transparent) 6px 12px); border-radius: 6px; opacity: .55; }
 .pl.fixture { border: 1.5px solid var(--line-strong); background: var(--fixture); border-radius: 6px; display: grid; place-items: center; color: var(--text-3); font-weight: 700; font-size: .9em; text-align: center; overflow: hidden; }
 .pl.fixture.tall { writing-mode: vertical-rl; letter-spacing: .1em; }
@@ -460,3 +460,6 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
   #viewBoard .stat .v { font-size: 20px; }
   #viewBoard .legend { margin-bottom: 8px; }
 }
+
+/* summaries: up to 3 lines on cards (full text on hover) */
+.sum div { -webkit-line-clamp: 3; }
