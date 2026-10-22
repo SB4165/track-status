@@ -97,15 +97,22 @@
     const curNo = cur ? Number(cur.stepNo) : total + 1;
     const fixing = steps.filter(s => s.status === '조치중');
     const openIssues = steps.filter(s => !isDone(s) && String(s.issue || '').trim());
-    let prog = String(p.summaryProgress || '').trim();
-    if (!prog) {
-      const latest = steps.filter(s => String(s.progress || '').trim()).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
-      if (latest) prog = `${latest.stepNo}. ${latest.progress}`;
-    }
-    let issue = String(p.summaryIssue || '').trim();
-    if (!issue && openIssues.length) issue = openIssues.map(s => `${s.stepNo}. ${s.issue}`).join(' / ');
     const pct = Math.round(done / total * 100);
-    return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
+    // auto drafts (used when no manual summary is saved)
+    let autoProg;
+    if (!cur) autoProg = `전 공정 완료 (${total}/${total})`;
+    else {
+      autoProg = `${cur.stepNo}. ${cur.stepName} ${cur.status}` + (String(cur.progress || '').trim() ? ` – ${String(cur.progress).trim()}` : '') + ` · ${done}/${total} 완료(${pct}%)`;
+      const lastDone = steps.filter(s => s.status === '완료' && Number(s.stepNo) < Number(cur.stepNo)).pop();
+      if (lastDone) autoProg += ` · 직전 완료: ${lastDone.stepNo}. ${lastDone.stepName}${lastDone.endDate ? ' (' + String(lastDone.endDate).slice(5) + ')' : ''}`;
+    }
+    const issueSteps = steps.filter(s => !isDone(s) && (String(s.issue || '').trim() || s.status === '조치중' || s.status === '보류'));
+    const autoIssue = issueSteps.map(s => `${s.stepNo}. ${s.stepName}${s.status === '조치중' || s.status === '보류' ? '(' + s.status + ')' : ''}${String(s.issue || '').trim() ? ': ' + String(s.issue).trim() : ''}`).join(' / ');
+    const manualProg = String(p.summaryProgress || '').trim();
+    const manualIssue = String(p.summaryIssue || '').trim();
+    const prog = manualProg || autoProg;
+    const issue = manualIssue || autoIssue;
+    return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
   }
   function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
@@ -451,13 +458,14 @@
       <div class="box">
         <div class="grid3 sumgrid">
           <label class="f">배치${active ? `<select class="in" id="mSlotSel">${slotOptions(p.slot, p)}</select>` : `<input type="text" value="출하완료" disabled>`}</label>
-          <label class="f">진행사항 요약<textarea id="sumProg" rows="2" placeholder="${esc(i.prog && !p.summaryProgress ? '자동: ' + i.prog : '비워두면 공정 기록에서 자동 표시')}">${esc(p.summaryProgress)}</textarea></label>
-          <label class="f">이슈사항 요약<textarea id="sumIssue" rows="2" placeholder="${esc(i.issue && !p.summaryIssue ? '자동: ' + i.issue : '비워두면 공정 기록에서 자동 표시')}">${esc(p.summaryIssue)}</textarea></label>
+          <label class="f"><span>진행사항 요약 <span class="autotag ${i.manualProg ? 'man' : ''}">${i.manualProg ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumProg" rows="3" data-auto="${esc(i.autoProg)}">${esc(i.prog)}</textarea></label>
+          <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumIssue" rows="3" placeholder="이슈 없음" data-auto="${esc(i.autoIssue)}">${esc(i.issue)}</textarea></label>
         </div>
         <div class="row-end between" style="flex-wrap:wrap">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 생략 처리">이 공정부터 진행</button></div>
-          <button class="btn" id="saveSum">요약 저장</button>
+          <div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>
         </div>
+        <div class="hint" style="margin-top:6px">자동 초안은 공정 기록이 바뀔 때마다 새로 작성됩니다. 내용을 고쳐 저장하면 '직접 작성'으로 고정됩니다.</div>
       </div>
       <div class="section-t">전체 공정 <span class="hint">공정을 눌러 상세 입력</span></div>
       <div class="steps">${steps}</div>
@@ -712,8 +720,15 @@
     }
     const id = t.closest('button') && t.closest('button').id;
     const pid = state.openProjectId;
+    if (id === 'autoSum') {
+      mutate({ action: 'saveSummary', projectId: pid, summaryProgress: '', summaryIssue: '' }, '자동 초안으로 바꿨습니다', d => {
+        const p = byId(d, pid); if (p) { p.summaryProgress = ''; p.summaryIssue = ''; }
+      });
+    }
     if (id === 'saveSum') {
-      const sp = $('#sumProg').value, si = $('#sumIssue').value;
+      // unchanged auto draft -> keep it automatic (store empty)
+      const keep = (el) => { const v = el.value.trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
+      const sp = keep($('#sumProg')), si = keep($('#sumIssue'));
       mutate({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, '요약이 저장되었습니다', d => {
         const p = byId(d, pid); if (p) { p.summaryProgress = sp; p.summaryIssue = si; }
       });

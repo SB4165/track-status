@@ -258,6 +258,8 @@ textarea { resize: vertical; min-height: 60px; line-height: 1.45; }
 .grid3.sumgrid { grid-template-columns: 150px 1fr 1fr; }
 .row-end { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
 .row-end.between { justify-content: space-between; }
+.autotag { font-size: 10.5px; font-weight: 800; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 6px; margin-left: 4px; }
+.autotag.man { color: var(--text-2); background: var(--surface); border: 1px solid var(--line); }
 .hint { font-size: 12px; color: var(--text-3); font-weight: 500; }
 
 .steps { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
