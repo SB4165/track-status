@@ -102,12 +102,12 @@
     let autoProg;
     if (!cur) autoProg = `전 공정 완료 (${total}/${total})`;
     else {
-      autoProg = `${cur.stepNo}. ${cur.stepName} ${cur.status}` + (String(cur.progress || '').trim() ? ` – ${String(cur.progress).trim()}` : '') + ` · ${done}/${total} 완료(${pct}%)`;
-      const lastDone = steps.filter(s => s.status === '완료' && Number(s.stepNo) < Number(cur.stepNo)).pop();
-      if (lastDone) autoProg += ` · 직전 완료: ${lastDone.stepNo}. ${lastDone.stepName}${lastDone.endDate ? ' (' + String(lastDone.endDate).slice(5) + ')' : ''}`;
+      // content only: current step's progress text (fallback: current step + status)
+      autoProg = String(cur.progress || '').trim() || `${cur.stepNo}. ${cur.stepName} ${cur.status}`;
     }
     const issueSteps = steps.filter(s => !isDone(s) && (String(s.issue || '').trim() || s.status === '조치중' || s.status === '보류'));
-    const autoIssue = issueSteps.map(s => `${s.stepNo}. ${s.stepName}${s.status === '조치중' || s.status === '보류' ? '(' + s.status + ')' : ''}${String(s.issue || '').trim() ? ': ' + String(s.issue).trim() : ''}`).join(' / ');
+    // content only (no 'step(status):' prefix); a held/fixing step without text falls back to its name
+    const autoIssue = issueSteps.map(s => String(s.issue || '').trim() || `${s.stepNo}. ${s.stepName}(${s.status})`).join(' / ');
     const manualProg = String(p.summaryProgress || '').trim();
     const manualIssue = String(p.summaryIssue || '').trim();
     const prog = manualProg || autoProg;
