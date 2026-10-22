@@ -103,7 +103,7 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   background-color: var(--floor);
   background-image: radial-gradient(var(--floor-dot) 1px, transparent 1px); background-size: 16px 16px;
   border: 2px solid var(--wall); border-radius: 14px; overflow: hidden;
-  font-size: clamp(9px, 1.02cqw, 14px);
+  font-size: clamp(9px, 1.12cqw, 14px);
 }
 .pl { position: absolute; left: calc(var(--x) * 0.1%); top: calc(var(--y) * 0.142857%); width: calc(var(--w) * 0.1%); height: calc(var(--h) * 0.142857%); }
 .pl.wall { background: repeating-linear-gradient(45deg, var(--wall) 0 6px, color-mix(in srgb, var(--wall) 70%, transparent) 6px 12px); border-radius: 6px; opacity: .55; }
@@ -451,3 +451,12 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .sy-tbl th.sorted { color: var(--accent); }
 .sy-tbl th.sorted .ar { color: var(--accent); }
 @media (max-width: 640px) { .sync-at { font-size: 10px; max-width: 108px; white-space: normal; text-align: right; } .title h1.logo { overflow: hidden; } }
+
+/* one-screen board: plan centered when shrunk to the viewport height; compact stats */
+#viewBoard .plan-wrap { margin: 0 auto; }
+@media (min-width: 901px) {
+  #viewBoard .stats { margin-bottom: 8px; }
+  #viewBoard .stat { padding: 8px 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  #viewBoard .stat .v { font-size: 20px; }
+  #viewBoard .legend { margin-bottom: 8px; }
+}

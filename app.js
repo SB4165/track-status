@@ -247,7 +247,20 @@
     $('#viewBoard').hidden = state.tab !== 'board';
     $('#viewProjects').hidden = state.tab !== 'projects';
     $('#viewSync').hidden = state.tab !== 'sync';
+    fitPlan();
   }
+  // desktop: shrink the floor plan so the whole board fits in one screen (easy to capture)
+  function fitPlan() {
+    const wrap = $('.plan-wrap'); if (!wrap) return;
+    wrap.style.width = '';
+    if (state.tab !== 'board' || window.innerWidth <= 900) return;
+    const top = wrap.getBoundingClientRect().top + window.scrollY;
+    const full = wrap.parentElement.clientWidth;
+    const fit = (window.innerHeight - top - 14) * 1000 / 700;
+    const w = Math.max(Math.min(full, 840), Math.min(full, fit));
+    if (w < full) wrap.style.width = Math.floor(w) + 'px';
+  }
+  window.addEventListener('resize', () => { clearTimeout(fitPlan._t); fitPlan._t = setTimeout(fitPlan, 80); });
 
   function cardHTML(slot, p) {
     const pack = isPack(slot);
