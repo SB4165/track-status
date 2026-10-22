@@ -392,6 +392,7 @@
   // ===================== Modal =====================
   function openModal(narrow) {
     $('.sheet').classList.toggle('narrow', !!narrow);
+    $('#mSave').hidden = true; // only the project detail shows the top save button
     $('#overlay').hidden = false; document.body.style.overflow = 'hidden';
   }
   function closeModal() { $('#overlay').hidden = true; document.body.style.overflow = ''; state.openProjectId = null; state.openStep = null; }
@@ -476,6 +477,7 @@
         ${active ? '<button class="btn" id="shipBtn">출하 완료</button>' : '<button class="btn" id="restoreBtn">진행중으로 복원</button>'}
       </div>`;
     if (!keepScroll) openModal(false);
+    $('#mSave').hidden = false;
     body.scrollTop = scroll;
   }
 
@@ -850,8 +852,36 @@
   });
 
   $('#mClose').addEventListener('click', closeModal);
-  $('#overlay').addEventListener('click', e => { if (e.target.id === 'overlay') closeModal(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#overlay').hidden) closeModal(); });
+  // modals close only with the X button (no backdrop click / Escape)
+  $('#mSave').addEventListener('click', saveAll);
+  // top save: collect every changed field first (a mutation re-renders the modal), then queue the saves
+  function saveAll() {
+    if (needKey()) { askKey().then(ok => { if (ok) saveAll(); }); return; }
+    const pid = state.openProjectId; const p = findProject(pid); if (!p) return;
+    const jobs = [];
+    const keep = (el) => { const v = el.value.trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
+    const sp = keep($('#sumProg')), si = keep($('#sumIssue'));
+    if (sp !== String(p.summaryProgress || '').trim() || si !== String(p.summaryIssue || '').trim()) {
+      jobs.push(() => mutate({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, null, d => {
+        const x = byId(d, pid); if (x) { x.summaryProgress = sp; x.summaryIssue = si; }
+      }));
+    }
+    $$('#mBody .st[data-step]').forEach(el => {
+      const no = Number(el.dataset.step); const s = (p.steps || []).find(x => Number(x.stepNo) === no); if (!s) return;
+      const v = n => el.querySelector(`[name=${n}]`).value;
+      const on = el.querySelector('.seg-ctl button.on');
+      const f = { status: on ? on.dataset.v : s.status, startDate: v('startDate'), endDate: v('endDate'), owner: v('owner'), progress: v('progress'), issue: v('issue') };
+      if (!Object.keys(f).some(k => String(f[k] || '').trim() !== String(s[k] || '').trim())) return;
+      jobs.push(() => mutate(Object.assign({ action: 'saveStep', projectId: pid, stepNo: no }, f), null, (d, user) => {
+        const x = byId(d, pid); if (!x) return;
+        const st = x.steps.find(y => Number(y.stepNo) === no); Object.assign(st, f, { updatedAt: nowStr(), updatedBy: user });
+        x.updatedAt = nowStr();
+      }));
+    });
+    if (!jobs.length) { toast('변경 사항이 없습니다'); return; }
+    jobs.forEach(j => j());
+    toast(`저장되었습니다 (${jobs.length}건)`);
+  }
 
   $('#mBody').addEventListener('click', e => {
     const t = e.target;

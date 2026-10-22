@@ -6,7 +6,7 @@
   <title>트랙 진행현황</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -117,7 +117,10 @@
           <div class="eyebrow" id="mSlot"></div>
           <h2 id="mTitle"></h2>
         </div>
-        <button class="icon-btn" id="mClose" aria-label="닫기">✕</button>
+        <div class="head-act">
+          <button class="btn primary" id="mSave" hidden title="바뀐 요약·공정 입력을 모두 저장">저장</button>
+          <button class="icon-btn" id="mClose" aria-label="닫기">✕</button>
+        </div>
       </div>
       <div class="sheet-body" id="mBody"></div>
     </div>
@@ -125,7 +128,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="config.js?v=13"></script>
-  <script src="app.js?v=13"></script>
+  <script src="config.js?v=14"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
