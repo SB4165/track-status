@@ -113,7 +113,7 @@
     return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
   }
   // compress free text into a short summary: split numbered/line items, drop numbering and
-  // non-numeric (…) notes, shorten each item, one item per line
+  // non-numeric (…) notes, one item per line
   // put each numbered item ('2. ', '3) ') on its own line
   const lineBreaks = (t) => String(t || '').replace(/[ \t]+(?=\d{1,2}[.)]\s+\S)/g, '\n').trim();
   function summarize(text) {
@@ -125,14 +125,8 @@
         .replace(/\s+/g, ' ').replace(/[\s,.;:]+$/, '').trim())
       .filter(Boolean);
     if (!items.length) return '';
-    // one line per item (numbered when there are several), each shortened to ~22 chars
-    const limit = items.length > 1 ? 22 : 44;
-    const cut = (x) => {
-      if (x.length <= limit) return x;
-      const s = x.slice(0, limit); const sp = s.lastIndexOf(' ');
-      return (sp >= limit * 0.6 ? s.slice(0, sp) : s).replace(/[\s,.(]+$/, '').replace(/\s+(및|와|과|그리고|or|and)$/i, '') + '…';
-    };
-    return items.length > 1 ? items.map((x, k) => `${k + 1}. ${cut(x)}`).join('\n') : cut(items[0]);
+    // one line per item (numbered when there are several); sentences are kept whole (no truncation)
+    return items.length > 1 ? items.map((x, k) => `${k + 1}. ${x}`).join('\n') : items[0];
   }
   function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
@@ -285,12 +279,12 @@
     if (state.tab === 'board') fitCards();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
-  // each of 진행/이슈 shows up to 3 lines; when the card is full, the longer block gives up a line first (min 1 each).
+  // each of 진행/이슈 shows up to 6 lines (as space allows); when the card is full, the longer block gives up a line first (min 1 each).
   // Hidden text ends with '…', the full text is in the tooltip and the detail window.
   function fitCards() {
     $$('#plan .card[data-pid]').forEach(c => {
       const vs = $$('.sum .v', c); if (!vs.length) return;
-      const lines = vs.map(() => 3);
+      const lines = vs.map(() => 6);
       const apply = () => vs.forEach((v, k) => { v.style.webkitLineClamp = lines[k]; });
       apply();
       let guard = 6;

@@ -455,7 +455,7 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 /* summaries: up to 3 lines on cards (full text on hover) */
 .sum > .row { display: flex; align-items: flex-start; gap: .3em; overflow: visible; }
 .sum .t { flex: none; margin-right: 0; }
-.sum .v { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: pre-line; line-height: 1.35; }
+.sum .v { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; white-space: pre-line; line-height: 1.35; }
 .prow .is { white-space: pre-line; }
 
 /* projects tab: row selection + bulk current-step bar */
