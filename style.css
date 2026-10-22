@@ -15,6 +15,7 @@
   --st-run: #2f6bff;    --st-run-bg: #e7efff;
   --st-fix: #e5552b;    --st-fix-bg: #fdede7;
   --st-done: #17a35b;   --st-done-bg: #e3f6ec;
+  --prog: #00b85c; --prog-from: #34d399; --prog-text: #00994d;
   --st-hold: #b07d00;   --st-hold-bg: #fbf3dc;
   --st-skip: #b8bfca;   --st-skip-bg: #f1f2f4;
 
@@ -37,6 +38,7 @@
     --st-run: #6b95ff;  --st-run-bg: #1f2a44;
     --st-fix: #ff7e56;  --st-fix-bg: #3a2620;
     --st-done: #3cc77d; --st-done-bg: #1b3327;
+    --prog: #2ee68a; --prog-from: #1fb877; --prog-text: #4ff0a0;
     --st-hold: #e0b23c; --st-hold-bg: #352d17;
     --st-skip: #5d6574; --st-skip-bg: #23272e;
     --floor: #16191f; --floor-dot: #262b33; --wall: #3a404c; --fixture: #232830;
@@ -128,13 +130,14 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .cur .step { display: flex; align-items: center; gap: .35em; flex-wrap: wrap; margin-top: .1em; }
 .cur .step b { font-size: .92em; line-height: 1.3; }
 .segs { display: grid; grid-template-columns: repeat(14, 1fr); gap: 2px; margin: .55em 0 .2em; }
-.segs i { height: .4em; min-height: 4px; border-radius: 2px; background: var(--st-wait-bg); }
+.segs i { height: .55em; min-height: 6px; border-radius: 2px; background: var(--line-strong); opacity: .55; }
+.segs i:not(.s-대기) { opacity: 1; }
 .segs i.s-진행 { background: var(--st-run); }
 .segs i.s-조치중 { background: var(--st-fix); }
-.segs i.s-완료 { background: var(--st-done); }
+.segs i.s-완료 { background: var(--prog); }
 .segs i.s-보류 { background: var(--st-hold); }
 .segs i.s-생략 { background: repeating-linear-gradient(135deg, var(--st-skip) 0 2px, transparent 2px 4px); }
-.pct { font-size: .78em; color: var(--text-3); }
+.pct { font-size: .85em; color: var(--prog-text); font-weight: 800; letter-spacing: -.01em; }
 .sum { font-size: .82em; color: var(--text-2); border-top: 1px dashed var(--line); padding-top: .45em; display: grid; gap: .2em; margin-top: auto; }
 .sum div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
 .sum .t { font-weight: 700; color: var(--text-3); margin-right: .3em; }
@@ -223,9 +226,9 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .prow .nm small { display: block; font-weight: 500; color: var(--text-3); font-size: 12px; }
 .prow .cs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
 .prow .cs span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prow .pg { display: grid; gap: 3px; font-size: 12px; color: var(--text-3); }
-.bar { height: 6px; border-radius: 4px; background: var(--st-wait-bg); overflow: hidden; }
-.bar i { display: block; height: 100%; background: var(--st-done); border-radius: 4px; }
+.prow .pg { display: grid; gap: 4px; font-size: 12.5px; color: var(--prog-text); font-weight: 800; }
+.bar { height: 9px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--prog-from), var(--prog)); border-radius: 5px; box-shadow: 0 0 6px color-mix(in srgb, var(--prog) 45%, transparent); }
 .prow .is { font-size: 12.5px; color: var(--st-fix); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .prow .is.none { color: var(--text-3); }
 .prow .dt { font-size: 12px; color: var(--text-3); }
