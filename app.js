@@ -287,7 +287,10 @@
       const lines = vs.map(() => 6);
       const apply = () => vs.forEach((v, k) => { v.style.webkitLineClamp = lines[k]; });
       apply();
-      let guard = 6;
+      // first shrink the summary text a little so whole sentences fit, clamp lines only as a last resort
+      const sum = $('.sum', c);
+      for (const f of [1, .92, .85, .78]) { sum.style.fontSize = f === 1 ? '' : (0.82 * f) + 'em'; if (c.scrollHeight <= c.clientHeight + 1) break; }
+      let guard = 8;
       while (c.scrollHeight > c.clientHeight + 1 && guard--) {
         const used = vs.map((v, k) => Math.min(lines[k], Math.round(v.scrollHeight / (parseFloat(getComputedStyle(v).lineHeight) || 14))));
         let k = used[0] >= used[1] ? 0 : 1; if (vs.length < 2) k = 0;
