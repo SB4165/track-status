@@ -271,19 +271,11 @@
     $('#viewSync').hidden = state.tab !== 'sync';
     fitPlan();
   }
-  // desktop: shrink the floor plan so the whole board fits in one screen (easy to capture)
   // canvas is 1000 wide; height follows the layout (lowest item + margin)
   const planH = () => Math.max(300, ...((state.data && state.data.layout) || []).map(l => Number(l.y) + Number(l.h) + 8));
+  // floor plan always uses the full width (fit-to-screen shrinking removed on request); only re-fit card summaries
   function fitPlan() {
-    const wrap = $('.plan-wrap'); if (!wrap) return;
-    wrap.style.width = '';
-    if (state.tab !== 'board' || window.innerWidth <= 900) return;
-    const top = wrap.getBoundingClientRect().top + window.scrollY;
-    const full = wrap.parentElement.clientWidth;
-    const fit = (window.innerHeight - top - 14) * 1000 / planH();
-    const w = Math.max(Math.min(full, 840), Math.min(full, fit));
-    if (w < full) wrap.style.width = Math.floor(w) + 'px';
-    fitCards();
+    if (state.tab === 'board') fitCards();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
   function fitCards() {

@@ -452,13 +452,6 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .sy-tbl th.sorted .ar { color: var(--accent); }
 @media (max-width: 640px) { .sync-at { font-size: 10px; max-width: 108px; white-space: normal; text-align: right; } .title h1.logo { overflow: hidden; } }
 
-/* one-screen board: plan centered when shrunk to the viewport height; compact stats */
-#viewBoard .plan-wrap { margin: 0 auto; }
-@media (min-width: 901px) {
-  #viewBoard .stats { margin-bottom: 8px; }
-  #viewBoard .stat { padding: 8px 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-  #viewBoard .stat .v { font-size: 20px; }
-  #viewBoard .legend { margin-bottom: 8px; }
 }
 
 /* summaries: up to 3 lines on cards (full text on hover) */
