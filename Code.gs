@@ -5,10 +5,12 @@
  */
 
 // ===== Config =====
-const REF_SPREADSHEET_ID = '1hWRxLYkJfPEBfItSNKv7IFuSOFcLI35b9jCHnKVRBtE';
-const REF_SHEET_GID = 664632288;
-const REF_NAME_COL = 12;   // L
-const REF_FILTER_TEXT = 'TRACK'; // checked in column M
+// Reference: BACKLOG STATUS > SYSTEM. Columns are located by header text (row 1), so moving columns is safe.
+const REF_SPREADSHEET_ID = '1ez8RBOycLocLfoG9a0scsT6gZTJS-8ZSwmFm9AaV8Vo';
+const REF_SHEET_NAME = 'SYSTEM';
+const REF_SHEET_GID = 1125892369; // fallback if the tab is renamed
+const REF_HEAD = { name: 'PROJECT NO.', type: 'TYPE', ship: 'Factory Out Date' };
+const REF_FILTER_TEXT = 'TRACK'; // checked in the TYPE column
 
 const STATUSES = ['대기', '진행', '조치중', '완료', '보류', '생략'];
 const DONE_LIKE = ['완료', '생략'];
@@ -186,51 +188,46 @@ function checkKey_(key) {
 
 // ===== Reference: project names =====
 function getProjectNames_(refresh) {
-  const cache = CacheService.getScriptCache();
-  if (!refresh) {
-    const hit = cache.get('projectNames');
-    if (hit) return JSON.parse(hit);
-  }
-  const ref = SpreadsheetApp.openById(REF_SPREADSHEET_ID);
-  const sh = ref.getSheets().find(s => s.getSheetId() === REF_SHEET_GID);
-  if (!sh) throw new Error('참조 시트 탭(gid=' + REF_SHEET_GID + ')을 찾을 수 없습니다.');
-  const last = sh.getLastRow();
-  if (last < 1) return [];
-  const vals = sh.getRange(1, REF_NAME_COL, last, 2).getDisplayValues();
-  const seen = {};
-  const names = [];
-  vals.forEach(r => {
-    const name = String(r[0] || '').trim();
-    const flag = String(r[1] || '').toUpperCase();
-    if (name && flag.indexOf(REF_FILTER_TEXT) !== -1 && !seen[name]) { seen[name] = true; names.push(name); }
-  });
-  try { cache.put('projectNames', JSON.stringify(names), 600); } catch (_) { /* too large */ }
-  return names;
+  return getRefRows_(refresh).map(r => r.name);
 }
 
-// Reference rows for the sync tab: J=No, L=name, M=TYPE, N=date, O=kind (M contains TRACK)
+// Reference rows: { no (sheet order), name, type, ship } where TYPE contains TRACK
 function getRefRows_(refresh) {
   const cache = CacheService.getScriptCache();
   if (!refresh) {
-    const hit = cache.get('refRows');
+    const hit = cache.get('refRows3');
     if (hit) return JSON.parse(hit);
   }
   const ref = SpreadsheetApp.openById(REF_SPREADSHEET_ID);
-  const sh = ref.getSheets().find(s => s.getSheetId() === REF_SHEET_GID);
-  if (!sh) throw new Error('참조 시트 탭(gid=' + REF_SHEET_GID + ')을 찾을 수 없습니다.');
+  const sh = ref.getSheetByName(REF_SHEET_NAME) || ref.getSheets().find(s => s.getSheetId() === REF_SHEET_GID);
+  if (!sh) throw new Error('참조 시트(' + REF_SHEET_NAME + ')를 찾을 수 없습니다.');
   const last = sh.getLastRow();
-  if (last < 1) return [];
-  const vals = sh.getRange(1, 10, last, 6).getDisplayValues(); // J..O
+  const lastCol = sh.getLastColumn();
+  if (last < 2) return [];
+  // find the header row (first 10 rows) and the columns by header text
+  const norm = v => String(v || '').replace(/\s+/g, ' ').trim().toUpperCase();
+  const top = sh.getRange(1, 1, Math.min(10, last), lastCol).getDisplayValues();
+  let hr = -1, col = {};
+  for (let i = 0; i < top.length && hr < 0; i++) {
+    const row = top[i].map(norm);
+    const c = {};
+    Object.keys(REF_HEAD).forEach(k => { c[k] = row.indexOf(norm(REF_HEAD[k])); });
+    if (c.name >= 0 && c.type >= 0) { hr = i; col = c; }
+  }
+  if (hr < 0) throw new Error('참조 시트에서 "' + REF_HEAD.name + '" / "' + REF_HEAD.type + '" 헤더를 찾을 수 없습니다.');
+  const n = last - (hr + 1);
+  if (n < 1) return [];
+  const read = c => c >= 0 ? sh.getRange(hr + 2, c + 1, n, 1).getDisplayValues().map(r => String(r[0] || '').trim()) : [];
+  const names = read(col.name), types = read(col.type), ships = read(col.ship);
   const seen = {};
   const rows = [];
-  vals.forEach(r => {
-    const name = String(r[2] || '').trim();
-    const type = String(r[3] || '').trim();
+  names.forEach((name, i) => {
+    const type = types[i] || '';
     if (!name || type.toUpperCase().indexOf(REF_FILTER_TEXT) === -1 || seen[name]) return;
     seen[name] = true;
-    rows.push({ no: String(r[0] || '').trim(), name: name, type: type, date: String(r[4] || '').trim(), kind: String(r[5] || '').trim() });
+    rows.push({ no: rows.length + 1, name: name, type: type, ship: ships[i] || '' });
   });
-  try { cache.put('refRows', JSON.stringify(rows), 600); } catch (_) { /* too large */ }
+  try { cache.put('refRows3', JSON.stringify(rows), 600); } catch (_) { /* too large */ }
   return rows;
 }
 

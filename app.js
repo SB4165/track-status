@@ -660,7 +660,7 @@
   // ===================== Sync tab (reference sheet) =====================
   const SY = { rows: null, at: '', loading: false, view: 'list', from: '', to: '', quick: 'all', st: '', group: '', q: '', hide: LS.get('track.syncHide') === '1', sel: new Set(), start: {}, slot: {}, hist: null, histLoading: false };
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const refDate = (s) => { const m = String(s || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
+  const refDate = (s) => { const m = String(s || '').match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? `${m[1].length === 2 ? '20' + m[1] : m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
   function quickRange(k) {
     const d = new Date(today() + 'T00:00:00');
     if (k === 'week') { const a = new Date(d); a.setDate(d.getDate() - (d.getDay() + 6) % 7); const b = new Date(a); b.setDate(a.getDate() + 6); return [ymd(a), ymd(b)]; }
@@ -674,7 +674,7 @@
     if (((state.data && state.data.syncExcluded) || []).includes(r.name)) return { k: 'ex', t: '제외' };
     return { k: 'wait', t: '대기' };
   }
-  const syAll = () => (SY.rows || []).map(r => Object.assign({}, r, { d: refDate(r.date), g: groupOf(r.name), s: syncStatus(r) }));
+  const syAll = () => (SY.rows || []).map(r => Object.assign({}, r, { d: refDate(r.ship), g: groupOf(r.name), s: syncStatus(r) }));
   const syFiltered = () => syAll().filter(r => {
     if (SY.from && (!r.d || r.d < SY.from)) return false;
     if (SY.to && (!r.d || r.d > SY.to)) return false;
@@ -714,7 +714,7 @@
       slot = p.state !== 'active' ? '출하완료' : p.slot ? esc(slotName(p.slot)) + (ty.length ? ' [' + esc(ty.join('/')) + ']' : '') : '미배치';
       cur = `<button class="sy-link" data-open="${esc(p.id)}">${i.cur ? `${pill(i.cur.status)} ${i.cur.stepNo}. ${esc(i.cur.stepName)}` : `${pill('완료')} 전 공정 완료`}</button>`;
     } else cur = '<span class="muted">관리 대상 아님</span>';
-    return `<tr class="${k !== 'wait' ? 'done' : ''} ${on ? 'on' : ''}" data-name="${n}"><td class="ck"><input type="checkbox" data-ck="${n}" ${on ? 'checked' : ''} aria-label="선택"></td><td>${esc(r.no)}</td><td><span class="sy-st ${k}">${r.s.t}</span></td><td>${esc(r.date)}</td><td><b>${n}</b></td><td>${esc(r.g)}</td><td>${esc(r.type)}</td><td>${esc(r.kind)}</td><td>${start}</td><td>${slot}</td><td>${cur}</td></tr>`;
+    return `<tr class="${k !== 'wait' ? 'done' : ''} ${on ? 'on' : ''}" data-name="${n}"><td class="ck"><input type="checkbox" data-ck="${n}" ${on ? 'checked' : ''} aria-label="선택"></td><td>${esc(r.no)}</td><td><span class="sy-st ${k}">${r.s.t}</span></td><td>${r.d ? r.d.replace(/-/g, '.') : (String(r.ship || '').trim() ? esc(r.ship) : '<span class="muted">미정</span>')}</td><td><b>${n}</b></td><td>${esc(r.g)}</td><td>${esc(r.type)}</td><td>${start}</td><td>${slot}</td><td>${cur}</td></tr>`;
   }
   function renderSync() {
     const all = syAll();
@@ -749,7 +749,7 @@
     if (!SY.rows) { $('#syTable').innerHTML = `<div class="sy-empty">${SY.loading ? '참조 시트를 불러오는 중…' : '목록을 불러오지 못했습니다. 새로고침을 눌러 주세요.'}</div>`; return; }
     const allOn = rows.length > 0 && rows.every(r => SY.sel.has(r.name));
     const sc = $('#syTable').scrollTop;
-    $('#syTable').innerHTML = `<table><thead><tr><th class="ck"><input type="checkbox" data-all="1" ${allOn ? 'checked' : ''} aria-label="전체 선택"></th><th>No.</th><th>상태</th><th>등록일</th><th>프로젝트명</th><th>프로젝트 그룹</th><th>TYPE</th><th>구분</th><th>시작 공정</th><th>배치</th><th>사이트 현재 공정</th></tr></thead><tbody>${rows.map(syRow).join('') || '<tr><td colspan="11" class="sy-empty">조건에 맞는 프로젝트가 없습니다</td></tr>'}</tbody></table>`;
+    $('#syTable').innerHTML = `<table><thead><tr><th class="ck"><input type="checkbox" data-all="1" ${allOn ? 'checked' : ''} aria-label="전체 선택"></th><th>No.</th><th>상태</th><th>출하일</th><th>프로젝트명</th><th>프로젝트 그룹</th><th>TYPE</th><th>시작 공정</th><th>배치</th><th>사이트 현재 공정</th></tr></thead><tbody>${rows.map(syRow).join('') || '<tr><td colspan="10" class="sy-empty">조건에 맞는 프로젝트가 없습니다</td></tr>'}</tbody></table>`;
     $('#syTable').scrollTop = sc;
   }
   function doSync(list, label) {
@@ -980,7 +980,7 @@
     const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
-    const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: String(153 + i), name: n, type: 'IMMERSION TRACK', date: i < 7 ? '2026.06.11' : i < 12 ? '2026.08.' + String(4 + i) : '2026.10.' + String(10 + i), kind: n.startsWith('RD') ? '개발' : '양산' }));
+    const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));
     const excluded = ['MISC-FER0 #1'];
     const occupied = (slot, selfId) => db.find(p => p.state === 'active' && Number(p.slot) === Number(slot) && p.id !== selfId);
     const isPackD = (slot) => layout.some(l => l.type === 'pack' && l.slot === Number(slot));

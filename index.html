@@ -6,7 +6,7 @@
   <title>트랙 진행현황</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <header class="topbar">
@@ -81,8 +81,8 @@
         </div>
         <div id="syList">
           <div class="sy-f">
-            <span class="sy-lb">등록일</span>
-            <input type="date" class="sy-in" id="syFrom" aria-label="시작일"><span class="sy-tl">~</span><input type="date" class="sy-in" id="syTo" aria-label="종료일">
+            <span class="sy-lb">출하일</span>
+            <input type="date" class="sy-in" id="syFrom" aria-label="출하일 시작"><span class="sy-tl">~</span><input type="date" class="sy-in" id="syTo" aria-label="출하일 끝">
             <div class="sy-q" id="syQuick"><button data-q="all" class="on">전체</button><button data-q="week">이번 주</button><button data-q="month">이번 달</button><button data-q="year">올해</button></div>
             <select class="sy-in" id="syStatus"><option value="">상태 전체</option><option value="wait">대기</option><option value="ok">동기화 완료</option><option value="ex">제외</option></select>
             <select class="sy-in" id="syGroup"></select>
@@ -104,7 +104,7 @@
           <div class="sy-tbl" id="syTable"></div>
         </div>
         <div id="syHist" hidden><div class="sy-tbl" id="syHistTable"></div></div>
-        <div class="sy-foot">· 참조 시트(공정별 부적합 관리대장 › 참조) L열 프로젝트 중 M열에 TRACK이 포함된 건만 표시 · 동기화 = 프로젝트 관리 탭에 등록 (시작 공정·배치 지정 가능) · 동기화 취소 = 프로젝트 관리 탭에서 삭제 · 동기화·취소·제외는 비밀번호 필요 (창을 닫을 때까지 유지) · 10분마다 자동 새로고침</div>
+        <div class="sy-foot">· 참조 시트(BACKLOG STATUS › SYSTEM)의 TYPE에 TRACK이 포함된 PROJECT NO.만 표시 · 출하일 = Factory Out Date (공란은 미정) · 열 위치가 바뀌어도 헤더 이름으로 자동 추적 · 동기화 = 프로젝트 관리 탭에 등록 (시작 공정·배치 지정 가능) · 동기화 취소 = 프로젝트 관리 탭에서 삭제 · 동기화·취소·제외는 비밀번호 필요 (창을 닫을 때까지 유지) · 10분마다 자동 새로고침</div>
       </div>
     </section>
   </main>
@@ -125,7 +125,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="config.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="config.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
