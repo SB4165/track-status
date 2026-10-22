@@ -15,7 +15,7 @@
     _m: {},
   };
   const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  const PACK_MIN_STEP = 12;
+  const PACK_MIN_STEP = 13;
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -145,6 +145,20 @@
     });
   }
 
+  // yes/no dialog
+  function confirmBox(title, msg) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.className = 'overlay'; ov.style.zIndex = '90';
+      ov.innerHTML = `<div class="sheet narrow" role="dialog" aria-modal="true"><div class="sheet-head"><div><h2>${esc(title)}</h2></div></div>
+        <div class="sheet-body"><div class="hint" style="font-size:14px">${esc(msg)}</div>
+        <div class="row-end"><button class="btn" data-a="0">아니오</button><button class="btn primary" data-a="1">예</button></div></div></div>`;
+      document.body.appendChild(ov);
+      ov.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (!b) return; ov.remove(); resolve(b.dataset.a === '1'); });
+      setTimeout(() => ov.querySelector('[data-a="1"]').focus(), 30);
+    });
+  }
+
   function mutate(body, okMsg, apply, after) {
     if (needKey()) { askKey().then(ok => { if (ok) mutate(body, okMsg, apply, after); }); return false; }
     const user = getUser();
@@ -246,7 +260,7 @@
     const curHtml = i.cur
       ? `<div class="step"><b>${i.cur.stepNo}. ${esc(i.cur.stepName)}</b>${pill(i.cur.status)}</div>`
       : `<div class="step"><b>전 공정 완료</b>${pill('완료')}</div>`;
-    return `<button class="card ${pack ? 'pack' : ''} ${i.hasIssue ? 'has-issue' : ''}" data-pid="${esc(p.id)}" data-st="${esc(i.curStatus)}" title="${esc(p.projectName)}">
+    return `<button class="card ${pack ? 'pack' : ''} ${i.hasIssue ? 'has-issue' : ''}" draggable="true" data-pid="${esc(p.id)}" data-st="${esc(i.curStatus)}" title="${esc(p.projectName)}">
       ${typesHTML(slot)}
       <div class="card-top">${tag}<span class="pname">${esc(p.projectName)}</span></div>
       <div class="cur"><div class="lbl">${pack ? esc(slotName(slot)) + ' · ' : ''}현재 공정</div>${curHtml}</div>
@@ -281,7 +295,9 @@
       if (it.type === 'wall') return `<div class="pl wall" style="${st}"></div>`;
       if (it.type === 'fixture') return `<div class="pl fixture ${it.h > it.w * 2 ? 'tall' : ''}" style="${st}" title="${esc(it.label)}">${esc(it.label)}</div>`;
       if (it.type === 'label') return `<div class="pl label ${it.h >= 28 ? 'big' : ''}" style="${st}">${esc(it.label)}</div>`;
-      if (it.type === 'slot' || it.type === 'pack') return `<div class="pl" style="${st}">${cardHTML(it.slot, map[it.slot])}</div>`;
+      if (it.type === 'door') return `<div class="pl door" style="${st}" title="${esc(it.label || '출입문')}"><svg viewBox="0 0 40 24" aria-hidden="true"><path d="M3 22h34"/><path d="M6 22V6"/><path d="M6 6a16 16 0 0 1 16 16"/></svg><span>${esc(it.label || '출입문')}</span></div>`;
+      if (it.type === 'pack') return `<div class="pl" data-pack="${it.slot}" style="${st}">${cardHTML(it.slot, map[it.slot])}</div>`;
+      if (it.type === 'slot') return `<div class="pl" style="${st}">${cardHTML(it.slot, map[it.slot])}</div>`;
       if (it.type === 'note') return `<div class="pl" style="${st}">${noteHTML(it)}</div>`;
       return '';
     }).join('');
@@ -832,6 +848,28 @@
     else openSlotPicker(Number(c.dataset.slot));
   };
   $('#plan').addEventListener('click', onCardClick);
+  // drag a placed card onto a packing slot -> confirm -> move
+  $('#plan').addEventListener('dragstart', e => {
+    const c = e.target.closest && e.target.closest('.card[data-pid]'); if (!c) return;
+    e.dataTransfer.setData('text/plain', c.dataset.pid); e.dataTransfer.effectAllowed = 'move';
+    state.dragPid = c.dataset.pid; c.classList.add('dragging'); $('#plan').classList.add('dragmode');
+  });
+  $('#plan').addEventListener('dragend', () => { state.dragPid = null; $$('#plan .dragging,#plan .drop-on').forEach(x => x.classList.remove('dragging', 'drop-on')); $('#plan').classList.remove('dragmode'); });
+  $('#plan').addEventListener('dragover', e => {
+    const t = e.target.closest('[data-pack]'); if (!t || !state.dragPid) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    $$('#plan .drop-on').forEach(x => { if (x !== t) x.classList.remove('drop-on'); }); t.classList.add('drop-on');
+  });
+  $('#plan').addEventListener('dragleave', e => { const t = e.target.closest('[data-pack]'); if (t && !t.contains(e.relatedTarget)) t.classList.remove('drop-on'); });
+  $('#plan').addEventListener('drop', e => {
+    const t = e.target.closest('[data-pack]'); if (!t) return;
+    e.preventDefault();
+    const pid = e.dataTransfer.getData('text/plain') || state.dragPid; const slot = Number(t.dataset.pack);
+    $$('#plan .drop-on').forEach(x => x.classList.remove('drop-on'));
+    const p = findProject(pid); if (!p || Number(p.slot) === slot) return;
+    if (!projectInfo(p).packOk) { toast(packMsg(), true); return; }
+    confirmBox('패킹존으로 이동하시겠습니까?', `${p.projectName} : ${p.slot ? slotName(p.slot) : '미배치'} → ${slotName(slot)}`).then(ok => { if (ok) setSlot(p, slot); });
+  });
   $('#slotList').addEventListener('click', onCardClick);
 
   $('#pSearch').addEventListener('input', e => { state.q = e.target.value; renderProjects(); });
@@ -971,18 +1009,17 @@
 
   // ===================== Demo backend =====================
   const Demo = (() => {
-    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)', '출하완료'];
-    const FILE = [4, 5, 6, 7, 8, 9, 10, 13, 14];
+    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '클리닝(제조)', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)', '출하완료'];
+    const FILE = [4, 5, 6, 7, 8, 9, 10, 14, 15];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
       L('wall-top', 'wall', null, '', 90, 8, 865, 52), L('wall-left', 'wall', null, '', 8, 290, 52, 370),
       L('slot-3', 'slot', 3, 'MPR, EMR, ITR', 95, 72, 132, 218), L('slot-4', 'slot', 4, 'STR, ESR', 240, 72, 132, 218), L('slot-5', 'slot', 5, 'STR, ESR', 385, 72, 132, 218),
       L('slot-6', 'slot', 6, 'MPR', 530, 72, 132, 218), L('slot-7', 'slot', 7, 'ITR, EMR', 675, 72, 132, 218), L('slot-8', 'slot', 8, 'FER', 820, 72, 132, 218),
       L('slot-2', 'slot', 2, 'MPR, ITR', 70, 302, 165, 172), L('slot-1', 'slot', 1, 'MPR', 70, 486, 165, 172),
-      L('fx-table1', 'fixture', null, '테이블', 748, 605, 105, 61), L('fx-table2', 'fixture', null, '테이블', 871, 605, 105, 61),
-      L('lb-class', 'label', null, 'class #1000', 400, 318, 230, 30),
-      L('pack-1', 'pack', 9, '패킹 1', 268, 368, 150, 192), L('pack-2', 'pack', 10, '패킹 2', 428, 368, 150, 192),
-      L('note-1', 'note', null, '기타사항', 712, 395, 264, 195),
+      L('door-1', 'door', null, '출입문', 70, 664, 165, 32),
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 255 + (i % 4) * 138, i < 4 ? 310 : 504, 130, 186)),
+      L('note-1', 'note', null, '기타사항', 815, 310, 175, 380),
     ];
     const notes = { 'note-1': { content: '10/24(금) 클린룸 정기 점검 예정\n메인 전기 차단기 위치 이동 작업 대기', updatedAt: '2026-10-21 09:00', updatedBy: '곽승범' } };
     const names = ['RD-SH-13-013 EMR#1', 'RD-SH-13-013 ESR#2', 'RD-SH-13-013 ESR#3', 'RD-SH-13-013 FER#0', 'RD-SH-13-013 MPR#4', 'RD-SH-13-013 MPR#5', 'RD-SH-13-013 MPR#6', 'MISC-STR10 #1', 'MISC-STR11 #1', 'MISC-FER0 #1', 'MISC-MPR7 #1', 'MISC-MPR9 #1'];

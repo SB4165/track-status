@@ -27,40 +27,47 @@ const STEPS = [
   { no: 9,  name: 'X1/X2 핸드레벨 촬영',     file: true },
   { no: 10, name: '물방울 JIG 레벨 촬영',    file: true },
   { no: 11, name: '로봇 배선 해체(제조)',    file: false },
-  { no: 12, name: '패킹리스트 확인',         file: false },
-  { no: 13, name: '출하사진 촬영',           file: true },
-  { no: 14, name: '패킹 서류 스캔 및 인쇄',  file: true },
-  { no: 15, name: '패킹(서류 동봉)',         file: false },
-  { no: 16, name: '출하완료',               file: false },
+  { no: 12, name: '클리닝(제조)',            file: false },
+  { no: 13, name: '패킹리스트 확인',         file: false },
+  { no: 14, name: '출하사진 촬영',           file: true },
+  { no: 15, name: '패킹 서류 스캔 및 인쇄',  file: true },
+  { no: 16, name: '패킹(서류 동봉)',         file: false },
+  { no: 17, name: '출하완료',               file: false },
 ];
-// STEPS_VERSION 2: inserted 11 (로봇 배선 해체), old 11-14 -> 12-15, added 16 (출하완료). Existing Steps rows migrate automatically.
-const STEPS_VERSION = '2';
+// STEPS_VERSION history (existing Steps rows migrate automatically, Steps sheet backed up first)
+//  v2: inserted 11 (로봇 배선 해체), added 출하완료 at the end
+//  v3: inserted 12 (클리닝)
+const STEPS_VERSION = '3';
 
 // Floor plan on a 1000 x 700 canvas (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
-// type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | note
+// type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
-const LAYOUT_VERSION = '5';
-const PACK_MIN_STEP = 12; // 패킹리스트 확인
+const LAYOUT_VERSION = '6';
+const PACK_MIN_STEP = 13; // 패킹리스트 확인
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
 const DEFAULT_LAYOUT = [
   ['wall-top',  'wall',    '', '',                        90,   8, 865,  52, true],
   ['wall-left', 'wall',    '', '',                         8, 290,  52, 370, true],
-  ['slot-3',    'slot',     3, 'MPR, EMR, ITR',                      95,  72, 132, 218, true],
-  ['slot-4',    'slot',     4, 'STR, ESR',                     240,  72, 132, 218, true],
-  ['slot-5',    'slot',     5, 'STR, ESR',                     385,  72, 132, 218, true],
-  ['slot-6',    'slot',     6, 'MPR',                     530,  72, 132, 218, true],
-  ['slot-7',    'slot',     7, 'ITR, EMR',                     675,  72, 132, 218, true],
-  ['slot-8',    'slot',     8, 'FER',                     820,  72, 132, 218, true],
-  ['slot-2',    'slot',     2, 'MPR, ITR',                      70, 302, 165, 172, true],
-  ['slot-1',    'slot',     1, 'MPR',                      70, 486, 165, 172, true],
-  ['fx-table1', 'fixture', '', '테이블',                 748, 605, 105,  61, true],
-  ['fx-table2', 'fixture', '', '테이블',                 871, 605, 105,  61, true],
-  ['lb-class',  'label',   '', 'class #1000',            400, 318, 230,  30, true],
-  ['pack-1',    'pack',     9, '패킹 1',                 268, 368, 150, 192, true],
-  ['pack-2',    'pack',    10, '패킹 2',                 428, 368, 150, 192, true],
-  ['note-1',    'note',    '', '기타사항',               712, 395, 264, 195, true],
+  ['slot-3',    'slot',     3, 'MPR, EMR, ITR',           95,  72, 132, 218, true],
+  ['slot-4',    'slot',     4, 'STR, ESR',               240,  72, 132, 218, true],
+  ['slot-5',    'slot',     5, 'STR, ESR',               385,  72, 132, 218, true],
+  ['slot-6',    'slot',     6, 'MPR',                    530,  72, 132, 218, true],
+  ['slot-7',    'slot',     7, 'ITR, EMR',               675,  72, 132, 218, true],
+  ['slot-8',    'slot',     8, 'FER',                    820,  72, 132, 218, true],
+  ['slot-2',    'slot',     2, 'MPR, ITR',                70, 302, 165, 172, true],
+  ['slot-1',    'slot',     1, 'MPR',                     70, 486, 165, 172, true],
+  ['door-1',    'door',    '', '출입문',                  70, 664, 165,  32, true],
+  ['pack-1',    'pack',     9, '패킹 1',                 255, 310, 130, 186, true],
+  ['pack-2',    'pack',    10, '패킹 2',                 393, 310, 130, 186, true],
+  ['pack-3',    'pack',    11, '패킹 3',                 531, 310, 130, 186, true],
+  ['pack-4',    'pack',    12, '패킹 4',                 669, 310, 130, 186, true],
+  ['pack-5',    'pack',    13, '패킹 5',                 255, 504, 130, 186, true],
+  ['pack-6',    'pack',    14, '패킹 6',                 393, 504, 130, 186, true],
+  ['pack-7',    'pack',    15, '패킹 7',                 531, 504, 130, 186, true],
+  ['pack-8',    'pack',    16, '패킹 8',                 669, 504, 130, 186, true],
+  ['note-1',    'note',    '', '기타사항',               815, 310, 175, 380, true],
 ];
 
 const SHEETS = {
@@ -75,7 +82,7 @@ const SHEETS = {
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -135,7 +142,7 @@ function getDb_() {
 function doGet(e) {
   const p = (e && e.parameter) || {};
   try {
-    migrateSteps_();
+    migrate_();
     switch (p.action) {
       case 'projectNames': return json_({ ok: true, names: getProjectNames_(p.refresh === '1') });
       case 'history':      return json_({ ok: true, rows: getHistory_(p) });
@@ -153,7 +160,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents || '{}'); } catch (_) { body = {}; }
   const lock = LockService.getScriptLock();
   try {
-    migrateSteps_();
+    migrate_();
     checkKey_(body.key);
     if (body.action === 'checkKey') return json_({ ok: true });
     lock.waitLock(20000);
@@ -606,58 +613,77 @@ function exclude_(b) {
   return bootstrap_();
 }
 
-// ===== Step list migration (runs once per STEPS_VERSION, backs up the Steps sheet first) =====
-function migrateSteps_() {
+// ===== Migrations (run once per version, lazily from doGet/doPost; sheets backed up first) =====
+function migrate_() {
   const props = PropertiesService.getScriptProperties();
-  if (props.getProperty('STEPS_VERSION') === STEPS_VERSION) return;
+  if (props.getProperty('STEPS_VERSION') === STEPS_VERSION && props.getProperty('LAYOUT_VERSION') === LAYOUT_VERSION) return;
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    if (props.getProperty('STEPS_VERSION') === STEPS_VERSION) return;
-    const ss = getDb_();
-    const sh = ss.getSheetByName('Steps');
-    const h = SHEETS.Steps;
-    const I = k => h.indexOf(k);
-    const vals = sh.getDataRange().getValues();
-    vals.shift();
-    if (vals.length) {
-      sh.copyTo(ss).setName('Steps_bak_v1_' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm'));
-      const pState = {};
-      readTable_('Projects').forEach(p => { pState[String(p.id)] = p.state; });
-      const byP = {}, order = [];
-      vals.forEach(r => {
-        const id = String(r[0] || '');
-        if (!id) return;
-        if (!byP[id]) { byP[id] = []; order.push(id); }
-        byP[id].push(r.slice(0, h.length));
-      });
-      const out = [];
-      order.forEach(id => {
-        const rows = byP[id];
-        if (rows.length < STEPS.length) {
-          // v1 (14 steps): shift 11+ by one, insert 11 and 16
-          let after = pState[id] === 'shipped';
-          rows.forEach(r => {
-            const no = Number(r[I('stepNo')]);
-            if (no >= 11) { r[I('stepNo')] = no + 1; if (String(r[I('status')]) !== '대기') after = true; }
-          });
-          const blank = (no, status) => { const r = h.map(() => ''); r[0] = id; r[I('stepNo')] = no; r[I('status')] = status; return r; };
-          rows.push(blank(11, after ? '완료' : '대기'));
-          rows.push(blank(16, pState[id] === 'shipped' ? '완료' : '대기'));
-        }
-        rows.sort((a, b) => Number(a[I('stepNo')]) - Number(b[I('stepNo')]));
-        rows.forEach(r => {
-          const d = STEPS[Number(r[I('stepNo')]) - 1];
-          if (d) { r[I('stepName')] = d.name; r[I('fileRequired')] = d.file; }
-          out.push(r.map(v => v instanceof Date ? fmtDate_(v) : (v === null || v === undefined ? '' : String(v))));
-        });
-      });
-      sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), h.length).clearContent();
-      sh.getRange(2, 1, out.length, h.length).setNumberFormat('@').setValues(out);
-      history_('system', 'steps', null, null, '공정 목록 변경: 11. 로봇 배선 해체(제조) 추가, 기존 11~14 → 12~15, 16. 출하완료 추가 (백업 시트 생성)');
-    }
-    props.setProperty('STEPS_VERSION', STEPS_VERSION);
+    const stamp = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm');
+    if (props.getProperty('STEPS_VERSION') !== STEPS_VERSION) { migrateSteps_(stamp); props.setProperty('STEPS_VERSION', STEPS_VERSION); }
+    if (props.getProperty('LAYOUT_VERSION') !== LAYOUT_VERSION) { migrateLayout_(stamp); props.setProperty('LAYOUT_VERSION', LAYOUT_VERSION); }
   } finally {
     lock.releaseLock();
   }
+}
+
+// rebuild the Layout sheet from DEFAULT_LAYOUT (project slots are kept: they are stored on Projects)
+function migrateLayout_(stamp) {
+  const ss = getDb_();
+  const sh = ss.getSheetByName('Layout');
+  if (!sh) return;
+  if (sh.getLastRow() > 1) sh.copyTo(ss).setName('Layout_bak_' + stamp);
+  sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), LAYOUT_HEAD.length).clearContent();
+  sh.getRange(2, 1, DEFAULT_LAYOUT.length, LAYOUT_HEAD.length).setValues(DEFAULT_LAYOUT);
+  history_('system', 'layout', null, null, '배치도 변경 (LAYOUT_VERSION ' + LAYOUT_VERSION + ', 백업 시트 생성)');
+}
+
+// step-list migration by row count: 14 (v1) -> 16 (v2) -> 17 (v3)
+function migrateSteps_(stamp) {
+  const ss = getDb_();
+  const sh = ss.getSheetByName('Steps');
+  const h = SHEETS.Steps;
+  const I = k => h.indexOf(k);
+  const vals = sh.getDataRange().getValues();
+  vals.shift();
+  if (!vals.length) return;
+  sh.copyTo(ss).setName('Steps_bak_' + stamp);
+  const pState = {};
+  readTable_('Projects').forEach(p => { pState[String(p.id)] = p.state; });
+  const byP = {}, order = [];
+  vals.forEach(r => {
+    const id = String(r[0] || '');
+    if (!id) return;
+    if (!byP[id]) { byP[id] = []; order.push(id); }
+    byP[id].push(r.slice(0, h.length));
+  });
+  const blank = (id, no, status) => { const r = h.map(() => ''); r[0] = id; r[I('stepNo')] = no; r[I('status')] = status; return r; };
+  // insert a new step at position k: later steps shift by one; new step is 완료 if any later step already started
+  const insertAt = (id, rows, k) => {
+    let after = pState[id] === 'shipped';
+    rows.forEach(r => {
+      const no = Number(r[I('stepNo')]);
+      if (no >= k) { r[I('stepNo')] = no + 1; if (String(r[I('status')]) !== '대기') after = true; }
+    });
+    rows.push(blank(id, k, after ? '완료' : '대기'));
+  };
+  const out = [];
+  order.forEach(id => {
+    const rows = byP[id];
+    if (rows.length === 14) { // v1 -> v2
+      insertAt(id, rows, 11);
+      rows.push(blank(id, 16, pState[id] === 'shipped' ? '완료' : '대기'));
+    }
+    if (rows.length === 16) insertAt(id, rows, 12); // v2 -> v3
+    rows.sort((a, b) => Number(a[I('stepNo')]) - Number(b[I('stepNo')]));
+    rows.forEach(r => {
+      const d = STEPS[Number(r[I('stepNo')]) - 1];
+      if (d) { r[I('stepName')] = d.name; r[I('fileRequired')] = d.file; }
+      out.push(r.map(v => v instanceof Date ? fmtDate_(v) : (v === null || v === undefined ? '' : String(v))));
+    });
+  });
+  sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), h.length).clearContent();
+  sh.getRange(2, 1, out.length, h.length).setNumberFormat('@').setValues(out);
+  history_('system', 'steps', null, null, '공정 목록 변경 (STEPS_VERSION ' + STEPS_VERSION + ': 12. 클리닝(제조) 추가 등, 백업 시트 생성)');
 }

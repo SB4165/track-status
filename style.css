@@ -427,3 +427,11 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
   .tabs { order: 3; width: 100%; margin: 0; }
   .tab { flex: 1; justify-content: center; }
 }
+
+/* door + drag to packing */
+.pl.door { display: flex; align-items: center; justify-content: center; gap: 6px; border: 1.5px dashed var(--line-strong); border-top: 3px solid var(--text-3); border-radius: 0 0 8px 8px; background: color-mix(in srgb, var(--fixture) 60%, transparent); color: var(--text-2); font-weight: 800; font-size: .85em; letter-spacing: .08em; }
+.pl.door svg { height: 70%; width: auto; fill: none; stroke: var(--text-3); stroke-width: 2; stroke-linecap: round; }
+#plan .card[draggable="true"] { cursor: grab; }
+#plan .card.dragging { opacity: .45; }
+#plan.dragmode [data-pack] > .card { outline: 2px dashed color-mix(in srgb, #7c5cff 55%, transparent); outline-offset: 2px; }
+#plan [data-pack].drop-on > .card { outline: 3px solid #7c5cff; outline-offset: 2px; background: color-mix(in srgb, #7c5cff 10%, var(--surface)); }
