@@ -252,6 +252,7 @@
     if (!state.data) return;
     renderTabs();
     renderBoard();
+    fitPlan(); // after stats are drawn (they move the plan down)
     renderProjects();
     renderSync();
     $('#projCnt').textContent = activeProjects().length || '';
@@ -1077,10 +1078,10 @@
     const FILE = [4, 5, 6, 7, 8, 9, 10, 14, 15];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
-      L('wall-top', 'wall', null, '', 40, 6, 952, 18), L('wall-left', 'wall', null, '', 8, 235, 24, 388),
+      L('wall-top', 'wall', null, '', 40, 6, 952, 18), L('wall-left', 'wall', null, '', 8, 235, 24, 402),
       ...['MPR, EMR, ITR', 'STR, ESR', 'STR, ESR', 'MPR', 'ITR, EMR', 'FER'].map((t, i) => L('slot-' + (i + 3), 'slot', i + 3, t, 40 + i * 160, 30, 152, 195)),
-      L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 176), L('slot-1', 'slot', 1, 'MPR', 40, 417, 192, 176),
-      L('door-1', 'door', null, '출입문', 40, 599, 192, 24),
+      L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 185), L('slot-1', 'slot', 1, 'MPR', 40, 426, 192, 185),
+      L('door-1', 'door', null, '출입문', 40, 617, 192, 20),
       ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 244 + (i % 4) * 148, i < 4 ? 235 : 433, 140, 190)),
       L('note-1', 'note', null, '기타사항', 840, 235, 152, 388),
     ];
