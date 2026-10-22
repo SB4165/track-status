@@ -26,18 +26,22 @@ const STEPS = [
   { no: 8,  name: 'Full Cycle 촬영',         file: true },
   { no: 9,  name: 'X1/X2 핸드레벨 촬영',     file: true },
   { no: 10, name: '물방울 JIG 레벨 촬영',    file: true },
-  { no: 11, name: '패킹리스트 확인',         file: false },
-  { no: 12, name: '출하사진 촬영',           file: true },
-  { no: 13, name: '패킹 서류 스캔 및 인쇄',  file: true },
-  { no: 14, name: '패킹(서류 동봉)',         file: false },
+  { no: 11, name: '로봇 배선 해체(제조)',    file: false },
+  { no: 12, name: '패킹리스트 확인',         file: false },
+  { no: 13, name: '출하사진 촬영',           file: true },
+  { no: 14, name: '패킹 서류 스캔 및 인쇄',  file: true },
+  { no: 15, name: '패킹(서류 동봉)',         file: false },
+  { no: 16, name: '출하완료',               file: false },
 ];
+// STEPS_VERSION 2: inserted 11 (로봇 배선 해체), old 11-14 -> 12-15, added 16 (출하완료). Existing Steps rows migrate automatically.
+const STEPS_VERSION = '2';
 
 // Floor plan on a 1000 x 700 canvas (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
-// type: slot (equipment) | pack (packing area, step>=11 only) | wall | fixture | label | note
+// type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | note
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
 const LAYOUT_VERSION = '5';
-const PACK_MIN_STEP = 11;
+const PACK_MIN_STEP = 12; // 패킹리스트 확인
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
 const DEFAULT_LAYOUT = [
@@ -71,7 +75,7 @@ const SHEETS = {
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -131,6 +135,7 @@ function getDb_() {
 function doGet(e) {
   const p = (e && e.parameter) || {};
   try {
+    migrateSteps_();
     switch (p.action) {
       case 'projectNames': return json_({ ok: true, names: getProjectNames_(p.refresh === '1') });
       case 'history':      return json_({ ok: true, rows: getHistory_(p) });
@@ -148,6 +153,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents || '{}'); } catch (_) { body = {}; }
   const lock = LockService.getScriptLock();
   try {
+    migrateSteps_();
     checkKey_(body.key);
     if (body.action === 'checkKey') return json_({ ok: true });
     lock.waitLock(20000);
@@ -598,4 +604,60 @@ function exclude_(b) {
   del.sort((x, y) => y - x).forEach(r => sh.deleteRow(r));
   appendRowsText_(getDb_().getSheetByName('History'), hRows);
   return bootstrap_();
+}
+
+// ===== Step list migration (runs once per STEPS_VERSION, backs up the Steps sheet first) =====
+function migrateSteps_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('STEPS_VERSION') === STEPS_VERSION) return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    if (props.getProperty('STEPS_VERSION') === STEPS_VERSION) return;
+    const ss = getDb_();
+    const sh = ss.getSheetByName('Steps');
+    const h = SHEETS.Steps;
+    const I = k => h.indexOf(k);
+    const vals = sh.getDataRange().getValues();
+    vals.shift();
+    if (vals.length) {
+      sh.copyTo(ss).setName('Steps_bak_v1_' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm'));
+      const pState = {};
+      readTable_('Projects').forEach(p => { pState[String(p.id)] = p.state; });
+      const byP = {}, order = [];
+      vals.forEach(r => {
+        const id = String(r[0] || '');
+        if (!id) return;
+        if (!byP[id]) { byP[id] = []; order.push(id); }
+        byP[id].push(r.slice(0, h.length));
+      });
+      const out = [];
+      order.forEach(id => {
+        const rows = byP[id];
+        if (rows.length < STEPS.length) {
+          // v1 (14 steps): shift 11+ by one, insert 11 and 16
+          let after = pState[id] === 'shipped';
+          rows.forEach(r => {
+            const no = Number(r[I('stepNo')]);
+            if (no >= 11) { r[I('stepNo')] = no + 1; if (String(r[I('status')]) !== '대기') after = true; }
+          });
+          const blank = (no, status) => { const r = h.map(() => ''); r[0] = id; r[I('stepNo')] = no; r[I('status')] = status; return r; };
+          rows.push(blank(11, after ? '완료' : '대기'));
+          rows.push(blank(16, pState[id] === 'shipped' ? '완료' : '대기'));
+        }
+        rows.sort((a, b) => Number(a[I('stepNo')]) - Number(b[I('stepNo')]));
+        rows.forEach(r => {
+          const d = STEPS[Number(r[I('stepNo')]) - 1];
+          if (d) { r[I('stepName')] = d.name; r[I('fileRequired')] = d.file; }
+          out.push(r.map(v => v instanceof Date ? fmtDate_(v) : (v === null || v === undefined ? '' : String(v))));
+        });
+      });
+      sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), h.length).clearContent();
+      sh.getRange(2, 1, out.length, h.length).setNumberFormat('@').setValues(out);
+      history_('system', 'steps', null, null, '공정 목록 변경: 11. 로봇 배선 해체(제조) 추가, 기존 11~14 → 12~15, 16. 출하완료 추가 (백업 시트 생성)');
+    }
+    props.setProperty('STEPS_VERSION', STEPS_VERSION);
+  } finally {
+    lock.releaseLock();
+  }
 }

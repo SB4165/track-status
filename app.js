@@ -15,7 +15,7 @@
     _m: {},
   };
   const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  const PACK_MIN_STEP = 11;
+  const PACK_MIN_STEP = 12;
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -99,12 +99,8 @@
     const openIssues = steps.filter(s => !isDone(s) && String(s.issue || '').trim());
     const pct = Math.round(done / total * 100);
     // auto drafts (used when no manual summary is saved)
-    let autoProg;
-    if (!cur) autoProg = `전 공정 완료 (${total}/${total})`;
-    else {
-      // content only: current step's progress text (fallback: current step + status)
-      autoProg = String(cur.progress || '').trim() || `${cur.stepNo}. ${cur.stepName} ${cur.status}`;
-    }
+    // content only: current step's progress text; blank when nothing was entered
+    const autoProg = cur ? String(cur.progress || '').trim() : '';
     const issueSteps = steps.filter(s => !isDone(s) && (String(s.issue || '').trim() || s.status === '조치중' || s.status === '보류'));
     // content only (no 'step(status):' prefix); a held/fixing step without text falls back to its name
     const autoIssue = issueSteps.map(s => String(s.issue || '').trim() || `${s.stepNo}. ${s.stepName}(${s.status})`).join(' / ');
@@ -257,7 +253,7 @@
       <div class="segs">${segs}</div>
       <div class="pct">${i.done}/${i.total} 완료 · ${i.pct}%</div>
       <div class="sum">
-        <div><span class="t">진행</span>${i.prog ? esc(i.prog) : '<span class="muted">-</span>'}</div>
+        <div><span class="t">진행</span>${esc(i.prog)}</div>
         <div class="${i.issue ? 'issue' : ''}"><span class="t">이슈</span>${i.issue ? esc(i.issue) : '<span class="muted">없음</span>'}</div>
       </div>
     </button>`;
@@ -945,8 +941,8 @@
 
   // ===================== Demo backend =====================
   const Demo = (() => {
-    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)'];
-    const FILE = [4, 5, 6, 7, 8, 9, 10, 12, 13];
+    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)', '출하완료'];
+    const FILE = [4, 5, 6, 7, 8, 9, 10, 13, 14];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
       L('wall-top', 'wall', null, '', 90, 8, 865, 52), L('wall-left', 'wall', null, '', 8, 290, 52, 370),
@@ -1008,7 +1004,7 @@
           (b.items || []).forEach((it, k) => {
             if (db.some(x => x.state !== 'removed' && x.projectName === it.name)) return;
             let slot = it.slot ? Number(it.slot) : null;
-            if (slot && (occupied(slot) || (isPackD(slot) && it.startStep < 11))) slot = null;
+            if (slot && (occupied(slot) || (isPackD(slot) && it.startStep < PACK_MIN_STEP))) slot = null;
             const np = mk('S' + Date.now() + k, slot, it.name, -1); np.steps.forEach(s => { if (s.stepNo < (it.startStep || 1)) s.status = '완료'; });
             db.push(np); log(b, 'sync', np, null, '참조 시트 동기화 · ' + (slot ? slot + '번 배치' : '미배치'));
           });
@@ -1018,7 +1014,7 @@
         if (b.action === 'exclude') { (b.names || []).forEach(n => { const i = excluded.indexOf(n); if (b.on && i < 0) excluded.push(n); if (!b.on && i >= 0) excluded.splice(i, 1); log(b, b.on ? 'exclude' : 'include', { id: '', projectName: n, slot: '' }); }); return wait(snap()); }
         const p = db.find(x => x.id === b.projectId);
         if (b.action === 'setSlot' && p) {
-          if (b.slot && isPackD(b.slot) && curNo(p) < 11) return fail('패킹 칸에는 11번 공정 이상만 배치할 수 있습니다.');
+          if (b.slot && isPackD(b.slot) && curNo(p) < PACK_MIN_STEP) return fail('패킹 칸에는 ' + PACK_MIN_STEP + '번 공정 이상만 배치할 수 있습니다.');
           const occ = b.slot && occupied(b.slot, p.id);
           if (occ && !b.force) return fail('이미 배치됨');
           if (occ) occ.slot = null;
