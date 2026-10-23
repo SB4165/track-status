@@ -6,7 +6,7 @@
   <title>트랙 진행현황</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
   <header class="topbar">
@@ -124,13 +124,13 @@
         </div>
         <div class="tb-right">
           <span class="sy-meta" id="nMeta"></span>
-          <button class="btn primary" id="nSync" title="부적합 관리대장 시트에서 새 항목만 가져옵니다 (기존 입력값 유지)">
+          <button class="btn primary" id="nSync" title="부적합 관리대장 시트의 최신 내용을 가져옵니다 (처리완료 체크는 웹 값 유지)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>동기화
           </button>
         </div>
       </div>
       <div class="sy-tbl ncr-tbl" id="nTable"></div>
-      <div class="sy-foot">· 공정별 부적합 관리대장 › 부적합 처리현황 시트에서 발주 프로젝트명이 트랙 프로젝트(출하 포함)와 일치하는 건만 표시 (시트에서 숨김 처리된 행 포함) · 동기화는 시트 → 웹 단방향: 새 NO만 추가하고, 이미 있는 건은 웹 값을 유지한 채 빈 칸만 채움 · 처리완료 체크는 웹에만 저장 (비밀번호 필요) · 열 제목의 ▾ 를 눌러 항목별 필터</div>
+      <div class="sy-foot">· 공정별 부적합 관리대장 › 부적합 처리현황 시트에서 발주 프로젝트명이 트랙 프로젝트(출하 포함)와 일치하는 건만 표시 (시트에서 숨김 처리된 행 포함) · 동기화는 시트 → 웹 단방향: 새 NO는 추가, 기존 건은 시트의 최신 내용으로 갱신 (처리완료 체크만 웹 값 유지) · 처리완료 체크는 웹에만 저장 (비밀번호 필요) · 열 제목의 ▾ 를 눌러 항목별 필터</div>
     </section>
   </main>
 
@@ -153,7 +153,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="config.js?v=33"></script>
-  <script src="app.js?v=33"></script>
+  <script src="config.js?v=34"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

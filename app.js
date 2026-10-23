@@ -1098,7 +1098,7 @@
         const j = await apiPost({ action: 'syncNcr', user });
         state.data = j; render(true);
         const r = j.ncrResult || {};
-        toast(`부적합 동기화 완료 · 신규 ${r.added || 0}건${r.filled ? ` · 빈 칸 보완 ${r.filled}건` : ''}`);
+        toast(`부적합 동기화 완료 · 신규 ${r.added || 0}건${r.filled ? ` · 변경 반영 ${r.filled}건` : ''}`);
       } catch (e) { toast('동기화 실패: ' + e.message, true); }
       NC.busy = false; btn.disabled = false; btn.lastChild.textContent = '동기화';
     });

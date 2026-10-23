@@ -738,7 +738,7 @@ function readNcrSource_() {
     return o;
   }).filter(o => o.no && o.project);
 }
-// one-way sync: new NO -> append; existing NO -> keep web values, only fill blank fields (done is never overwritten)
+// one-way sync: new NO -> append; existing NO -> refresh every field from the sheet except 처리완료 (web value kept)
 function syncNcr_(b) {
   const names = {};
   readTable_('Projects').filter(p => p.state === 'active' || p.state === 'shipped').forEach(p => { names[ncrNorm_(p.projectName)] = true; });
@@ -758,14 +758,15 @@ function syncNcr_(b) {
       return;
     }
     if (ex === true) return;
-    const patch = NCR_FIELDS.filter(f => String(ex[f] === undefined ? '' : ex[f]) === '' && o[f]);
-    if (!patch.length) return;
-    patch.forEach(f => sh.getRange(ex._row, SHEETS.Ncr.indexOf(f) + 1).setNumberFormat('@').setValue(o[f]));
+    if (!NCR_FIELDS.some(f => String(ex[f] === undefined ? '' : ex[f]) !== (o[f] || ''))) return;
+    const c0 = SHEETS.Ncr.indexOf(NCR_FIELDS[0]) + 1; // NCR_FIELDS are contiguous columns (action..note)
+    sh.getRange(ex._row, c0, 1, NCR_FIELDS.length).setNumberFormat('@').setValues([NCR_FIELDS.map(f => o[f] || '')]);
+    sh.getRange(ex._row, SHEETS.Ncr.indexOf('syncedAt') + 1).setNumberFormat('@').setValue(t);
     filled++;
   });
   appendRowsText_(sh, add);
   PropertiesService.getScriptProperties().setProperty('NCR_SYNCED_AT', t);
-  appendRowsText_(getDb_().getSheetByName('History'), [histArr_(user, 'ncrSync', { id: '', projectName: '', slot: '' }, null, '신규 ' + add.length + '건 / 빈 칸 보완 ' + filled + '건')]);
+  appendRowsText_(getDb_().getSheetByName('History'), [histArr_(user, 'ncrSync', { id: '', projectName: '', slot: '' }, null, '신규 ' + add.length + '건 / 변경 반영 ' + filled + '건')]);
   return Object.assign(bootstrap_(), { ncrResult: { added: add.length, filled: filled, matched: rows.length } });
 }
 function setNcrDone_(b) {
