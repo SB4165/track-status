@@ -284,7 +284,11 @@
     const wrap = $('.plan-wrap'); const r = wrap.getBoundingClientRect();
     const topbar = ($('.topbar') || {}).offsetHeight || 0;
     const max = Math.max(0, r.height - side.offsetHeight);
-    side.style.top = Math.min(max, Math.max(0, topbar + 12 - r.top)) + 'px';
+    const stick = Math.max(0, topbar + 12 - r.top);
+    // reach the plan's bottom line when the page is scrolled to the end
+    const s0 = window.scrollY + r.top - topbar - 12, s1 = document.documentElement.scrollHeight - window.innerHeight;
+    const lerp = s1 > s0 ? max * Math.min(1, Math.max(0, (window.scrollY - s0) / (s1 - s0))) : (window.scrollY >= s1 - 1 ? max : 0);
+    side.style.top = Math.min(max, Math.max(stick, lerp)) + 'px';
   }
   window.addEventListener('scroll', () => { if (state.tab === 'board') followProcSide(); }, { passive: true });
   // full process list in the free space left of the floor plan (plan size unchanged; hidden when there is no room)
@@ -300,7 +304,7 @@
     side.style.right = `calc(100% + ${free < 196 ? 6 : 14}px)`;
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
     const cnt = {}; activeProjects().forEach(p => { const i = projectInfo(p); if (i.cur) cnt[i.cur.stepNo] = (cnt[i.cur.stepNo] || 0) + 1; });
-    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수 · 보라 = 패킹 칸 배치 가능</div>`;
+    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수</div>`;
     followProcSide();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
