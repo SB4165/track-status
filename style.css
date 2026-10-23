@@ -551,3 +551,11 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .note-c .fs-xl, .note-ed .fs-xl { font-size: 1.5em; }
 .note-c b, .note-ed b { font-weight: 800; color: var(--text); }
 .proc-side { transition: top .12s ease-out; }
+.proc-side.compact { padding: 8px 6px 8px; font-size: 11px; border-radius: 10px; }
+.proc-side.compact .ps-h { font-size: 12px; margin-bottom: 6px; }
+.proc-side.compact .ps-h span { font-size: 10px; }
+.proc-side.compact ol { gap: 2px; }
+.proc-side.compact li { gap: 4px; padding: 3px 4px; border-radius: 6px; line-height: 1.2; }
+.proc-side.compact li b { width: 17px; height: 17px; font-size: 9.5px; }
+.proc-side.compact li em { min-width: 16px; height: 16px; padding: 0 3px; font-size: 9.5px; }
+.proc-side.compact .ps-f { font-size: 9.5px; margin-top: 6px; }

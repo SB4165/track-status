@@ -293,9 +293,11 @@
     let side = $('#procSide');
     if (!side) { side = document.createElement('aside'); side.id = 'procSide'; side.className = 'proc-side'; wrap.appendChild(side); }
     const free = wrap.getBoundingClientRect().left;
-    if (window.innerWidth <= 900 || free < 196) { side.hidden = true; return; }
-    const w = Math.min(250, free - 20);
+    if (window.innerWidth <= 900 || free < 112) { side.hidden = true; return; }
+    const w = Math.min(250, free - (free < 196 ? 10 : 20));
     side.style.width = w + 'px'; side.hidden = false;
+    side.classList.toggle('compact', w < 176);
+    side.style.right = `calc(100% + ${free < 196 ? 6 : 14}px)`;
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
     const cnt = {}; activeProjects().forEach(p => { const i = projectInfo(p); if (i.cur) cnt[i.cur.stepNo] = (cnt[i.cur.stepNo] || 0) + 1; });
     side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수 · 보라 = 패킹 칸 배치 가능</div>`;
