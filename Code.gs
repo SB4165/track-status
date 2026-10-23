@@ -11,6 +11,13 @@ const REF_SHEET_NAME = 'SYSTEM';
 const REF_SHEET_GID = 1125892369; // fallback if the tab is renamed
 const REF_HEAD = { name: 'PROJECT NO.', type: 'TYPE', ship: 'Factory Out Date' };
 const REF_FILTER_TEXT = 'TRACK'; // checked in the TYPE column
+// nonconformance (부적합) source: one-way sheet -> web; only rows whose 발주 프로젝트명 matches a track project
+const NCR_SPREADSHEET_ID = '1hWRxLYkJfPEBfItSNKv7IFuSOFcLI35b9jCHnKVRBtE';
+const NCR_SHEET_NAME = '부적합 처리현황';
+const NCR_SHEET_GID = 1615742909;
+// header text (normalized, contains) -> field ; qty has no header (column right after 품번)
+const NCR_HEAD = [['no', 'NO'], ['done', '처리완료'], ['action', '조치사항'], ['date', '발생일'], ['due', '재납일'], ['project', '발주프로젝트'], ['item', '품명'], ['partNo', '품번'], ['vendor', '귀책업체'], ['defect', '불량(소분류)'], ['finder', '발견자'], ['owner', '담당자'], ['content', '불량내용'], ['note', '비고']];
+const NCR_FIELDS = ['action', 'date', 'due', 'project', 'item', 'partNo', 'qty', 'vendor', 'defect', 'finder', 'owner', 'content', 'note'];
 
 const STATUSES = ['대기', '진행', '조치중', '완료', '보류', '생략'];
 const DONE_LIKE = ['완료', '생략'];
@@ -79,12 +86,13 @@ const SHEETS = {
   Measures: ['projectId', 'stepNo', 'x1', 'x2', 'updatedAt', 'updatedBy'],
   History:  ['at', 'by', 'action', 'projectId', 'projectName', 'slot', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'detail'],
   SyncState: ['name', 'state', 'at', 'by'],
+  Ncr:      ['no', 'done', 'action', 'date', 'due', 'project', 'item', 'partNo', 'qty', 'vendor', 'defect', 'finder', 'owner', 'content', 'note', 'syncedAt', 'updatedAt', 'updatedBy'],
 };
 
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -183,6 +191,8 @@ function doPost(e) {
       case 'syncProjects':  result = syncProjects_(body); break;
       case 'unsync':        result = unsync_(body); break;
       case 'exclude':       result = exclude_(body); break;
+      case 'syncNcr':       result = syncNcr_(body); break;
+      case 'setNcrDone':    result = setNcrDone_(body); break;
       default: throw new Error('Unknown action');
     }
     return json_(Object.assign({ ok: true }, result));
@@ -296,7 +306,13 @@ function bootstrap_() {
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy, style: String(n.style || '') }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
   const syncExcluded = getDb_().getSheetByName('SyncState') ? readTable_('SyncState').filter(r => r.state === 'excluded').map(r => String(r.name)) : [];
-  return { layout, projects, notes, keyRequired, syncExcluded, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
+  const ncr = getDb_().getSheetByName('Ncr') ? readTable_('Ncr').filter(r => String(r.no) !== '').map(r => {
+    const o = { no: String(r.no), done: r.done === true || String(r.done).toUpperCase() === 'TRUE' };
+    NCR_FIELDS.concat(['syncedAt', 'updatedAt', 'updatedBy']).forEach(f => { o[f] = String(r[f] === undefined ? '' : r[f]); });
+    return o;
+  }) : [];
+  const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty('NCR_SYNCED_AT') || '';
+  return { layout, projects, notes, keyRequired, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
@@ -684,6 +700,87 @@ function exclude_(b) {
   });
   appendRowsText_(sh, add);
   del.sort((x, y) => y - x).forEach(r => sh.deleteRow(r));
+  appendRowsText_(getDb_().getSheetByName('History'), hRows);
+  return bootstrap_();
+}
+
+// ===== Nonconformance (부적합 처리현황) =====
+function ncrSheet_() {
+  const ss = getDb_();
+  let sh = ss.getSheetByName('Ncr');
+  if (!sh) {
+    sh = ss.insertSheet('Ncr');
+    sh.getRange(1, 1, 1, SHEETS.Ncr.length).setValues([SHEETS.Ncr]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+const ncrNorm_ = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+// read the source tab (hidden rows included: getValues ignores row visibility); header row found by text
+function readNcrSource_() {
+  const src = SpreadsheetApp.openById(NCR_SPREADSHEET_ID);
+  const sh = src.getSheetByName(NCR_SHEET_NAME) || src.getSheets().filter(x => x.getSheetId() === NCR_SHEET_GID)[0];
+  if (!sh) throw new Error('부적합 시트(' + NCR_SHEET_NAME + ')를 찾을 수 없습니다.');
+  const vals = sh.getDataRange().getDisplayValues();
+  let hr = -1;
+  for (let i = 0; i < Math.min(vals.length, 10); i++) { if (vals[i].some(c => ncrNorm_(c).indexOf('발주프로젝트') !== -1)) { hr = i; break; } }
+  if (hr < 0) throw new Error('부적합 시트에서 "발주 프로젝트 명" 헤더를 찾을 수 없습니다.');
+  const head = vals[hr].map(ncrNorm_);
+  const col = {};
+  NCR_HEAD.forEach(([f, t]) => { const k = head.findIndex(h => h.indexOf(ncrNorm_(t)) !== -1); if (k !== -1) col[f] = k; });
+  if (col.no === undefined) col.no = 0;
+  if (col.done === undefined) col.done = col.no + 1;
+  if (col.partNo !== undefined) col.qty = col.partNo + 1;
+  if (col.project === undefined) throw new Error('발주 프로젝트 명 열을 찾을 수 없습니다.');
+  return vals.slice(hr + 1).map(r => {
+    const o = {};
+    Object.keys(col).forEach(f => { o[f] = String(r[col[f]] === undefined ? '' : r[col[f]]).trim(); });
+    return o;
+  }).filter(o => o.no && o.project);
+}
+// one-way sync: new NO -> append; existing NO -> keep web values, only fill blank fields (done is never overwritten)
+function syncNcr_(b) {
+  const names = {};
+  readTable_('Projects').filter(p => p.state === 'active' || p.state === 'shipped').forEach(p => { names[ncrNorm_(p.projectName)] = true; });
+  const rows = readNcrSource_().filter(o => names[ncrNorm_(o.project)]);
+  const sh = ncrSheet_();
+  const cur = {};
+  readTable_('Ncr').forEach(r => { cur[String(r.no)] = r; });
+  const t = now_();
+  const user = b.user || '';
+  const add = [];
+  let filled = 0;
+  rows.forEach(o => {
+    const ex = cur[o.no];
+    if (!ex) {
+      add.push(SHEETS.Ncr.map(h => h === 'done' ? (String(o.done).toUpperCase() === 'TRUE' ? 'TRUE' : 'FALSE') : h === 'syncedAt' ? t : (h === 'updatedAt' || h === 'updatedBy') ? '' : (o[h] || '')));
+      cur[o.no] = true;
+      return;
+    }
+    if (ex === true) return;
+    const patch = NCR_FIELDS.filter(f => String(ex[f] === undefined ? '' : ex[f]) === '' && o[f]);
+    if (!patch.length) return;
+    patch.forEach(f => sh.getRange(ex._row, SHEETS.Ncr.indexOf(f) + 1).setNumberFormat('@').setValue(o[f]));
+    filled++;
+  });
+  appendRowsText_(sh, add);
+  PropertiesService.getScriptProperties().setProperty('NCR_SYNCED_AT', t);
+  appendRowsText_(getDb_().getSheetByName('History'), [histArr_(user, 'ncrSync', { id: '', projectName: '', slot: '' }, null, '신규 ' + add.length + '건 / 빈 칸 보완 ' + filled + '건')]);
+  return Object.assign(bootstrap_(), { ncrResult: { added: add.length, filled: filled, matched: rows.length } });
+}
+function setNcrDone_(b) {
+  const nos = Array.isArray(b.nos) ? b.nos.map(String) : [];
+  if (!nos.length) throw new Error('대상이 없습니다.');
+  const on = b.done !== false;
+  const sh = ncrSheet_();
+  const t = now_();
+  const hRows = [];
+  readTable_('Ncr').forEach(r => {
+    if (nos.indexOf(String(r.no)) === -1) return;
+    sh.getRange(r._row, 2).setValue(on ? 'TRUE' : 'FALSE');
+    sh.getRange(r._row, SHEETS.Ncr.indexOf('updatedAt') + 1, 1, 2).setNumberFormat('@').setValues([[t, b.user || '']]);
+    hRows.push(histArr_(b.user, on ? 'ncrDone' : 'ncrUndone', { id: '', projectName: r.project, slot: '' }, null, 'NO ' + r.no + ' · ' + (r.item || '') + ' · ' + (r.content || '')));
+  });
   appendRowsText_(getDb_().getSheetByName('History'), hRows);
   return bootstrap_();
 }

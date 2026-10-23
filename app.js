@@ -24,7 +24,7 @@
   const state = {
     data: null,
     names: (() => { try { return JSON.parse(LS.get('track.names') || 'null'); } catch (_) { return null; } })(),
-    tab: ['projects', 'sync'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
+    tab: ['projects', 'sync', 'ncr'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
     filter: 'active', q: '', group: '',
     openProjectId: null, openStep: null,
     pending: 0, queue: Promise.resolve(), idMap: {}, psel: new Set(),
@@ -256,6 +256,7 @@
     fitPlan(); // after stats are drawn (they move the plan down)
     renderProjects();
     renderSync();
+    renderNcr();
     $('#projCnt').textContent = activeProjects().length || '';
     syncLabel();
     // re-render the open project only for local changes (server syncs must not wipe what the user is typing)
@@ -270,6 +271,7 @@
     $('#viewBoard').hidden = state.tab !== 'board';
     $('#viewProjects').hidden = state.tab !== 'projects';
     $('#viewSync').hidden = state.tab !== 'sync';
+    $('#viewNcr').hidden = state.tab !== 'ncr';
     fitPlan();
   }
   // canvas is 1000 wide; height follows the layout (lowest item + margin)
@@ -995,9 +997,117 @@
     });
   }
 
+  // ===================== Nonconformance (부적합 처리현황) =====================
+  const NC = { q: '', group: '', st: LS.get('track.ncrSt') || 'open', cf: {}, pop: null, busy: false };
+  const NCOLS = [
+    ['ship', '구분', 1], ['done', '처리완료', 1], ['no', 'NO', 0], ['action', '조치사항', 1], ['date', '발생일', 1], ['due', '재납일/조치일', 1],
+    ['project', '발주 프로젝트명', 1], ['item', '품명 또는 위치', 1], ['partNo', '품번 (도번)', 0], ['qty', '수량', 0],
+    ['vendor', '귀책업체', 1], ['defect', '불량 (소분류)', 1], ['finder', '발견자', 1], ['owner', '담당자', 1], ['content', '불량내용', 0], ['note', '비고 / 세부 조치내용', 0],
+  ];
+  const ncNorm = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+  function ncrRows() {
+    const ship = {}; projects().forEach(p => { ship[ncNorm(p.projectName)] = p.state === 'shipped'; });
+    return ((state.data && state.data.ncr) || []).map(r => Object.assign({}, r, { shipped: !!ship[ncNorm(r.project)], g: groupOf(r.project) }));
+  }
+  const ncVal = (r, f) => f === 'ship' ? (r.shipped ? '장비출하' : '진행중') : f === 'done' ? (r.done ? '처리완료' : '미처리') : (String(r[f] || '').trim() || '(빈 칸)');
+  // rows passing search / group / status chip and every column filter except `skip`
+  function ncPass(r, skip) {
+    if (NC.st === 'open' && r.done) return false;
+    if (NC.st === 'done' && !r.done) return false;
+    if (NC.st === 'ship' && !r.shipped) return false;
+    if (NC.group && r.g !== NC.group) return false;
+    if (NC.q) { const q = NC.q.toLowerCase(); if (!['project', 'item', 'partNo', 'content', 'note', 'vendor', 'no'].some(f => String(r[f] || '').toLowerCase().includes(q))) return false; }
+    for (const f in NC.cf) { if (f !== skip && NC.cf[f] && !NC.cf[f].has(ncVal(r, f))) return false; }
+    return true;
+  }
+  function renderNcr() {
+    const all = ncrRows();
+    const open = all.filter(r => !r.done).length;
+    $('#ncrCnt').textContent = open || '';
+    if (state.tab !== 'ncr') return;
+    const base = all.filter(r => { if (NC.group && r.g !== NC.group) return false; return true; });
+    const cnt = { all: base.length, open: base.filter(r => !r.done).length, done: base.filter(r => r.done).length, ship: base.filter(r => r.shipped).length };
+    $('#nFilter').innerHTML = [['all', '전체'], ['open', '미처리'], ['done', '처리완료'], ['ship', '장비출하']].map(([k, l]) => `<button class="chip ${NC.st === k ? 'on' : ''}" data-nf="${k}">${l}<b>${cnt[k]}</b></button>`).join('');
+    const gc = {}; all.forEach(r => { gc[r.g] = (gc[r.g] || 0) + 1; });
+    if (NC.group && !gc[NC.group]) NC.group = '';
+    $('#nGroup').innerHTML = `<option value="">전체 프로젝트 그룹</option>` + Object.keys(gc).sort((a, b) => a.localeCompare(b)).map(g => `<option value="${esc(g)}" ${g === NC.group ? 'selected' : ''}>${esc(g)} (${gc[g]})</option>`).join('');
+    $('#nGroup').classList.toggle('set', !!NC.group);
+    const nf = Object.keys(NC.cf).filter(f => NC.cf[f]).length;
+    $('#nReset').hidden = !(nf || NC.q || NC.group);
+    $('#nMeta').textContent = state.data.ncrSyncedAt ? '최근 동기화 ' + state.data.ncrSyncedAt : '아직 동기화하지 않았습니다';
+    const list = all.filter(r => ncPass(r)).sort((a, b) => (Number(b.no) || 0) - (Number(a.no) || 0));
+    const th = NCOLS.map(([f, l, flt]) => `<th class="nh-${f} ${NC.cf[f] ? 'flt' : ''}">${flt ? `<button class="nc-th" data-ncf="${f}" title="${esc(l)} 필터">${esc(l)}<i>▾</i></button>` : esc(l)}</th>`).join('');
+    const tr = (r) => `<tr class="nohover ${r.done ? 'done' : ''} ${r.shipped ? 'shipr' : ''}">
+      <td class="nc-sh">${r.shipped ? '<span class="nc-ship">장비출하</span>' : ''}</td>
+      <td class="nc-done"><label class="nc-ck"><input type="checkbox" data-ncdone="${esc(r.no)}" ${r.done ? 'checked' : ''} aria-label="처리완료"></label></td>
+      <td class="nc-no">${esc(r.no)}</td><td>${r.action ? `<span class="nc-act a-${esc(r.action)}">${esc(r.action)}</span>` : ''}</td>
+      <td>${esc(r.date)}</td><td>${esc(r.due)}</td><td class="nc-pj">${esc(r.project)}</td><td>${esc(r.item)}</td><td>${esc(r.partNo)}</td><td class="nc-q">${esc(r.qty)}</td>
+      <td>${esc(r.vendor)}</td><td>${esc(r.defect)}</td><td>${esc(r.finder)}</td><td>${esc(r.owner)}</td>
+      <td class="wrap nc-tx">${esc(r.content)}</td><td class="wrap nc-tx">${esc(r.note)}</td></tr>`;
+    const emp = all.length ? '조건에 맞는 부적합 건이 없습니다' : '동기화된 부적합 건이 없습니다. 우측 상단 동기화를 눌러 주세요.';
+    $('#nTable').innerHTML = `<table><thead><tr>${th}</tr></thead><tbody>${list.map(tr).join('') || `<tr class="nohover"><td colspan="${NCOLS.length}" class="sy-empty">${emp}</td></tr>`}</tbody></table>`;
+  }
+  function closeNcPop() { if (NC.pop) { NC.pop.remove(); NC.pop = null; } }
+  function openNcPop(f, btn) {
+    closeNcPop();
+    const label = NCOLS.find(c => c[0] === f)[1];
+    const cnt = {}; ncrRows().filter(r => ncPass(r, f)).forEach(r => { const v = ncVal(r, f); cnt[v] = (cnt[v] || 0) + 1; });
+    if (NC.cf[f]) NC.cf[f].forEach(v => { if (!(v in cnt)) cnt[v] = 0; });
+    const vals = Object.keys(cnt).sort((a, b) => (a === '(빈 칸)') - (b === '(빈 칸)') || a.localeCompare(b, 'ko', { numeric: true }));
+    const sel = new Set(NC.cf[f] ? [...NC.cf[f]] : vals);
+    const pop = document.createElement('div'); pop.className = 'nc-pop';
+    pop.innerHTML = `<div class="np-h">${esc(label)}</div><input type="search" class="sy-in np-q" placeholder="값 검색"><label class="np-all"><input type="checkbox"> 모두 선택</label><div class="np-l"></div><div class="np-f"><button class="btn ghost np-clr">초기화</button><button class="btn primary np-ok">적용</button></div>`;
+    document.body.appendChild(pop); NC.pop = pop;
+    const r = btn.getBoundingClientRect();
+    pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - 268)) + 'px';
+    const L = pop.querySelector('.np-l'), all = pop.querySelector('.np-all input'), q = pop.querySelector('.np-q');
+    const draw = () => {
+      const k = q.value.trim().toLowerCase(); const vis = vals.filter(v => !k || v.toLowerCase().includes(k));
+      L.innerHTML = vis.map(v => `<label><input type="checkbox" value="${esc(v)}" ${sel.has(v) ? 'checked' : ''}><span>${esc(v)}</span><em>${cnt[v]}</em></label>`).join('') || '<div class="np-e">값 없음</div>';
+      all.checked = vis.length > 0 && vis.every(v => sel.has(v));
+    };
+    draw();
+    q.addEventListener('input', draw);
+    L.addEventListener('change', e => { const v = e.target.value; if (e.target.checked) sel.add(v); else sel.delete(v); draw(); });
+    all.addEventListener('change', () => { const k = q.value.trim().toLowerCase(); vals.filter(v => !k || v.toLowerCase().includes(k)).forEach(v => { if (all.checked) sel.add(v); else sel.delete(v); }); draw(); });
+    pop.querySelector('.np-clr').addEventListener('click', () => { delete NC.cf[f]; closeNcPop(); renderNcr(); });
+    pop.querySelector('.np-ok').addEventListener('click', () => { if (vals.every(v => sel.has(v))) delete NC.cf[f]; else NC.cf[f] = new Set(sel); closeNcPop(); renderNcr(); });
+    q.focus();
+  }
+  document.addEventListener('mousedown', e => { if (NC.pop && !NC.pop.contains(e.target) && !e.target.closest('[data-ncf]')) closeNcPop(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && NC.pop) closeNcPop(); });
+  $('#nTable').addEventListener('click', e => { const b = e.target.closest('[data-ncf]'); if (!b) return; if (NC.pop && NC.pop.dataset.f === b.dataset.ncf) { closeNcPop(); return; } openNcPop(b.dataset.ncf, b); NC.pop.dataset.f = b.dataset.ncf; });
+  $('#nTable').addEventListener('change', e => {
+    const c = e.target.closest('[data-ncdone]'); if (!c) return;
+    const no = c.dataset.ncdone, on = c.checked;
+    const ok = mutate({ action: 'setNcrDone', nos: [no], done: on }, on ? `NO ${no} 처리완료` : `NO ${no} 처리완료 해제`, d => { const r = (d.ncr || []).find(x => x.no === no); if (r) { r.done = on; r.updatedAt = nowStr(); } });
+    if (!ok) c.checked = !on;
+  });
+  $('#nFilter').addEventListener('click', e => { const b = e.target.closest('[data-nf]'); if (!b) return; NC.st = b.dataset.nf; LS.set('track.ncrSt', NC.st); renderNcr(); });
+  $('#nGroup').addEventListener('change', e => { NC.group = e.target.value; renderNcr(); });
+  $('#nSearch').addEventListener('input', e => { NC.q = e.target.value.trim(); renderNcr(); });
+  $('#nReset').addEventListener('click', () => { NC.cf = {}; NC.q = ''; NC.group = ''; $('#nSearch').value = ''; renderNcr(); });
+  $('#nSync').addEventListener('click', async function ncSync() {
+    if (NC.busy) return;
+    if (needKey()) { if (await askKey()) ncSync(); return; }
+    const btn = $('#nSync'); NC.busy = true; btn.disabled = true; btn.lastChild.textContent = '동기화 중…';
+    const user = getUser();
+    state.queue = state.queue.then(async () => {
+      try {
+        const j = await apiPost({ action: 'syncNcr', user });
+        state.data = j; render(true);
+        const r = j.ncrResult || {};
+        toast(`부적합 동기화 완료 · 신규 ${r.added || 0}건${r.filled ? ` · 빈 칸 보완 ${r.filled}건` : ''}`);
+      } catch (e) { toast('동기화 실패: ' + e.message, true); }
+      NC.busy = false; btn.disabled = false; btn.lastChild.textContent = '동기화';
+    });
+  });
+
   // ===================== Events =====================
   $$('.tab').forEach(t => t.addEventListener('click', () => { state.tab = t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0);
     if (state.tab === 'sync') { if (!SY.rows) loadSync(false); else renderSync(); }
+    if (state.tab === 'ncr') renderNcr(); else closeNcPop();
   }));
   $('#syView').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; SY.view = b.dataset.v; if (SY.view === 'hist') SY.hist = null; renderSync(); });
   $('#syRefresh').addEventListener('click', () => { if (SY.view === 'hist') { SY.hist = null; renderSync(); } else loadSync(true); });
@@ -1256,7 +1366,18 @@
       mk('P7', null, names[6], 0), mk('P8', null, names[7], 2),
       Object.assign(mk('P9', null, names[8], 14), { state: 'shipped' }),
     ];
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
+    const NR = (no, done, action, date, project, item, partNo, qty, vendor, defect, finder, owner, content, note = '') => ({ no: String(no), done, action, date, due: '', project, item, partNo, qty: String(qty), vendor, defect, finder, owner, content, note });
+    const ncrSrc = [
+      NR(2808, false, '입고요청', '08/03', 'RD-SH-13-013 MPR#4', 'Ionbar', 'I-09-020', 1, '키앤스', '오입고', '박제민', '김나현', '부속품 브라켓 미입고'),
+      NR(2822, false, '재발주', '08/05', 'MISC-STR11 #1', 'Z MOVER', 'TM01S-Z110-M005-0', 1, '제조2팀', '외관손상', '조규완', '이현지', '로봇가동중 충격으로 인한 외관손상'),
+      NR(2823, false, '재발주', '08/05', 'MISC-STR10 #1', 'Z BELT CLAMP', 'TM01S-Z110-A001-1', 4, '제조2팀', '외관손상', '조규완', '이현지', '조립불량으로 인한 외관손상'),
+      NR(2830, true, '업체반출', '08/06', 'MISC-STR10 #1', 'Z CABLE COVER', 'TM01S-Z110-C002-0', 2, '아진물산', 'Hole', '한태경', '김수원', '도면과 홀 위치 상이', '재가공 후 입고 완료'),
+      NR(2851, false, '방문조치', '08/07', 'RD-SH-13-013 ESR#2', 'BACK SIDE COVER', 'CC04-145-B01', 1, '기구설계', '치수', '이연우', '김나현', '커버 간섭 발생'),
+      NR(2860, false, '현물수정', '08/08', 'RD-SH-13-013 EMR#1', 'LM GUIDE', 'CME00-LM00-M019-0', 1, '아진물산', 'Hole', '한태경', '김수원', '체결 불가'),
+      NR(2902, false, '', '08/11', 'ECP352', 'MAGNET', 'B-05-002', 1, '기구', '외관손상', '최진혁', '김나현', '대상 외 프로젝트(필터됨)'),
+    ];
+    const ncr = []; let ncrAt = '';
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));
@@ -1293,6 +1414,13 @@
           });
           return wait(snap());
         }
+        if (b.action === 'syncNcr') {
+          const names = db.filter(x => x.state !== 'removed').map(x => x.projectName.replace(/\s+/g, '').toUpperCase());
+          let added = 0;
+          ncrSrc.filter(r => names.includes(r.project.replace(/\s+/g, '').toUpperCase())).forEach(r => { if (!ncr.some(x => x.no === r.no)) { ncr.push(Object.assign({}, r, { syncedAt: now(), updatedAt: '', updatedBy: '' })); added++; } });
+          ncrAt = now(); const j = snap(); j.ncrResult = { added, filled: 0 }; return wait(j);
+        }
+        if (b.action === 'setNcrDone') { ncr.forEach(x => { if ((b.nos || []).includes(x.no)) { x.done = b.done !== false; x.updatedAt = now(); x.updatedBy = b.user; } }); return wait(snap()); }
         if (b.action === 'unsync') { db.forEach(x => { if ((b.projectIds || []).includes(x.id) && x.state === 'active') { log(b, 'unsync', x); x.state = 'removed'; x.slot = null; } }); return wait(snap()); }
         if (b.action === 'exclude') { (b.names || []).forEach(n => { const i = excluded.indexOf(n); if (b.on && i < 0) excluded.push(n); if (!b.on && i >= 0) excluded.splice(i, 1); log(b, b.on ? 'exclude' : 'include', { id: '', projectName: n, slot: '' }); }); return wait(snap()); }
         const p = db.find(x => x.id === b.projectId);

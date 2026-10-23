@@ -6,7 +6,7 @@
   <title>트랙 진행현황</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=32">
+  <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +18,7 @@
         <button class="tab on" role="tab" data-tab="board">진행현황</button>
         <button class="tab" role="tab" data-tab="projects">프로젝트 관리 <span class="cnt" id="projCnt"></span></button>
         <button class="tab" role="tab" data-tab="sync">프로젝트 동기화 <span class="badge" id="syncCnt"></span></button>
+        <button class="tab" role="tab" data-tab="ncr">부적합 처리현황 <span class="badge" id="ncrCnt" title="미처리 건수"></span></button>
       </nav>
       <div class="actions">
         <button class="btn ghost" id="userBtn" title="작성자 이름 변경">
@@ -109,6 +110,28 @@
         <div class="sy-foot">· 참조 시트(BACKLOG STATUS › SYSTEM)의 TYPE에 TRACK이 포함된 PROJECT NO.만 표시 · 출하일 = Factory Out Date (공란은 미정) · 열 위치가 바뀌어도 헤더 이름으로 자동 추적 · 동기화 = 프로젝트 관리 탭에 등록 (시작 공정·배치 지정 가능) · 동기화 취소 = 프로젝트 관리 탭에서 삭제 · 동기화·취소·제외는 비밀번호 필요 (창을 닫을 때까지 유지) · 10분마다 자동 새로고침</div>
       </div>
     </section>
+    <!-- Nonconformance view -->
+    <section id="viewNcr" class="view" hidden>
+      <div class="toolbar">
+        <div class="tb-left">
+          <div class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="nSearch" placeholder="프로젝트·품명·품번·내용 검색">
+          </div>
+          <select class="slotsel grpsel" id="nGroup" aria-label="프로젝트 그룹"></select>
+          <div class="chips" id="nFilter"></div>
+          <button class="btn ghost" id="nReset" hidden>필터 초기화</button>
+        </div>
+        <div class="tb-right">
+          <span class="sy-meta" id="nMeta"></span>
+          <button class="btn primary" id="nSync" title="부적합 관리대장 시트에서 새 항목만 가져옵니다 (기존 입력값 유지)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>동기화
+          </button>
+        </div>
+      </div>
+      <div class="sy-tbl ncr-tbl" id="nTable"></div>
+      <div class="sy-foot">· 공정별 부적합 관리대장 › 부적합 처리현황 시트에서 발주 프로젝트명이 트랙 프로젝트(출하 포함)와 일치하는 건만 표시 (시트에서 숨김 처리된 행 포함) · 동기화는 시트 → 웹 단방향: 새 NO만 추가하고, 이미 있는 건은 웹 값을 유지한 채 빈 칸만 채움 · 처리완료 체크는 웹에만 저장 (비밀번호 필요) · 열 제목의 ▾ 를 눌러 항목별 필터</div>
+    </section>
   </main>
 
   <!-- Modal -->
@@ -130,7 +153,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="config.js?v=32"></script>
-  <script src="app.js?v=32"></script>
+  <script src="config.js?v=33"></script>
+  <script src="app.js?v=33"></script>
 </body>
 </html>
