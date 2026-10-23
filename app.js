@@ -310,10 +310,11 @@
     side.classList.toggle('compact', w < 176);
     side.style.right = `calc(100% + ${free < 196 ? 6 : 14}px)`;
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
-    const cnt = {}; activeProjects().forEach(p => { projectInfo(p).curGroup.forEach(s => { cnt[s.stepNo] = (cnt[s.stepNo] || 0) + 1; }); });
     const defs = state.data.stepDefs || [];
+    // parallel group = one combined count (shown on the group's first step)
+    const cnt = {}; activeProjects().forEach(p => { const c = projectInfo(p).cur; if (!c) return; const k = parOf(c.stepNo) ? groupStart(c.stepNo) : c.stepNo; cnt[k] = (cnt[k] || 0) + 1; });
     const parPos = (s) => { if (!s.par) return ''; const g = defs.filter(x => x.par === s.par); return g.length < 2 ? '' : s.no === g[0].no ? 'par par-s' : s.no === g[g.length - 1].no ? 'par par-e' : 'par'; };
-    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${parPos(s).includes('par-s') ? '<i class="pt">병행</i>' : ''}${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수${defs.some(s => s.par) ? '<br><span class="pl"></span> 병행 공정 (동시 진행 가능)' : ''}</div>`;
+    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${parPos(s).includes('par-s') ? '<i class="pt">병행</i>' : ''}${cnt[s.no] ? `<em title="${parPos(s) ? '현재 이 병행 공정인 프로젝트 (합계)' : '현재 이 공정인 프로젝트'}">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><div class="ps-l"><em>n</em><span>현재 진행 프로젝트 수</span></div>${defs.some(s => s.par) ? '<div class="ps-l"><i class="parbar"></i><span>병행 공정 (동시 진행 가능)</span></div>' : ''}</div>`;
     followProcSide();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)

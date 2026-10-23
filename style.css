@@ -616,7 +616,6 @@ th.flt .nc-th, th.flt .nc-th i { color: var(--accent); opacity: 1; }
 .card .cur .step.g b { font-size: .8em; min-width: 0; white-space: nowrap; }
 .card .cur .step.g .pill { flex: none; }
 .proc-side.compact li .pt { display: none; }
-.proc-side .ps-f .pl { display: inline-block; width: 3px; height: 10px; background: #f59e0b; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
 
 /* project modal: nonconformance history */
 .ncrbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 10px 12px; }
@@ -646,3 +645,11 @@ th.flt .nc-th, th.flt .nc-th i { color: var(--accent); opacity: 1; }
 .nb-ok { font-size: 11px; font-weight: 800; color: #157347; background: #e3f6ec; border: 1px solid #b9e6cc; border-radius: 6px; padding: 1px 6px; }
 .nb-open { font-size: 11px; font-weight: 800; color: #c2410c; background: #fff1e6; border: 1px solid #fed7aa; border-radius: 6px; padding: 1px 6px; }
 @media (prefers-color-scheme: dark) { .nb-chip em, .nb-open { background: #3a2312; border-color: #6b3a1a; color: #fdba74; } .nb-ok { background: #12301f; border-color: #1f5a37; color: #6ee7a0; } }
+
+.proc-side .ps-f .ps-l { display: flex; align-items: center; gap: 6px; }
+.proc-side .ps-f .ps-l + .ps-l { margin-top: 3px; }
+.proc-side .ps-f .ps-l .parbar { flex: none; display: block; width: 3px; height: 12px; margin: 0 5px 0 6px; background: #f59e0b; border-radius: 2px; }
+/* parallel group: one combined badge centred across both rows */
+.proc-side li.par-s { z-index: 1; }
+.proc-side li.par-s em { transform: translateY(13px); }
+.proc-side.compact li.par-s em { transform: translateY(11px); }
