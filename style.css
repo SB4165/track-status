@@ -540,3 +540,14 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .meas-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--line-strong); border-radius: 10px; }
 .meas-row .mx { flex: 1; min-width: 130px; }
 @media (max-width: 640px) { .mgrid { grid-template-columns: 1fr; } }
+
+/* note rich text: per-selection bold / size */
+.note-tools .tb { height: 32px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
+.note-tools .tb:hover { border-color: var(--accent); color: var(--accent); }
+.note-ed { min-height: 220px; max-height: 50vh; overflow: auto; border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px 12px; background: var(--surface); line-height: 1.55; white-space: pre-wrap; outline: none; font-size: 14px; }
+.note-ed:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.note-ed:empty::before { content: attr(data-ph); color: var(--text-3); }
+.note-c .fs-l, .note-ed .fs-l { font-size: 1.22em; }
+.note-c .fs-xl, .note-ed .fs-xl { font-size: 1.5em; }
+.note-c b, .note-ed b { font-weight: 800; color: var(--text); }
+.proc-side { transition: top .12s ease-out; }

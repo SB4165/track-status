@@ -519,7 +519,7 @@ function saveNote_(b) {
   const row = findRow_(sh, r => r[0] === id);
   const vals = [[id, String(b.content || ''), now_(), b.user || '', String(b.style || '')]];
   if (row < 0) appendText_(sh, vals[0]); else sh.getRange(row, 1, 1, 5).setNumberFormat('@').setValues(vals);
-  history_(b.user, 'note', null, null, id + ': ' + String(b.content || ''));
+  history_(b.user, 'note', null, null, id + ': ' + String(b.content || '').replace(/^<!--rt-->/, '').replace(/<br\s*\/?>|<\/div>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
   return bootstrap_();
 }
 

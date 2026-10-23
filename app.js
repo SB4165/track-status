@@ -278,6 +278,15 @@
   function fitPlan() {
     if (state.tab === 'board') { fitCards(); placeProcSide(); }
   }
+  // keep the process list in view while scrolling (stays within the floor plan's height)
+  function followProcSide() {
+    const side = $('#procSide'); if (!side || side.hidden) return;
+    const wrap = $('.plan-wrap'); const r = wrap.getBoundingClientRect();
+    const topbar = ($('.topbar') || {}).offsetHeight || 0;
+    const max = Math.max(0, r.height - side.offsetHeight);
+    side.style.top = Math.min(max, Math.max(0, topbar + 12 - r.top)) + 'px';
+  }
+  window.addEventListener('scroll', () => { if (state.tab === 'board') followProcSide(); }, { passive: true });
   // full process list in the free space left of the floor plan (plan size unchanged; hidden when there is no room)
   function placeProcSide() {
     const wrap = $('.plan-wrap'); if (!wrap || !state.data) return;
@@ -289,7 +298,8 @@
     side.style.width = w + 'px'; side.hidden = false;
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
     const cnt = {}; activeProjects().forEach(p => { const i = projectInfo(p); if (i.cur) cnt[i.cur.stepNo] = (cnt[i.cur.stepNo] || 0) + 1; });
-    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${s.file ? '<i class="fb">파일</i>' : ''}${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><i class="fb">파일</i> NAS 파일 확인 공정 · <em>n</em> 현재 진행 프로젝트 수 · 보라 = 패킹 칸 배치 가능</div>`;
+    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수 · 보라 = 패킹 칸 배치 가능</div>`;
+    followProcSide();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
   // each of 진행/이슈 shows up to 6 lines (as space allows); when the card is full, the longer block gives up a line first (min 1 each).
@@ -381,12 +391,12 @@
 
   // robot specification table (layout type 'spec')
   const SPEC = [
-    ['Wafer', '(Warpage, Thickness, Type etc.)', '0.775mm Si wafer, max warpage: 0.5mm, 1mm warpage in the future\n0.5-1.2mm glass wafer, max warpage: 0.5mm'],
+    ['Wafer', '(Warpage, Thickness, Type etc.)', '0.775mm Si wafer\n· max warpage: 0.5mm\n· 1mm warpage in the future\n0.5-1.2mm glass wafer\n· max warpage: 0.5mm'],
     ['Vibration', '', '≤ 0.3mm (end effector)'],
-    ['Repeatablity + AWC', '', 'MPR ≤ 0.1mm, STR, ITR, EMR, ESR ≤ 0.15mm', true],
+    ['Repeatablity + AWC', '', 'MPR ≤ 0.1mm\nMPR 외 ≤ 0.15mm', true],
     ['Noise', '', 'SEMI standard'],
     ['Particle', '', 'ISO Standard Class 1'],
-    ['Leveling of robot', '', 'Y-axis ≤ 0.08°, Z-axis ≤ 0.08°, X-axis ≤ 0.03°'],
+    ['Leveling of robot', '', 'Y-axis ≤ 0.08°\nZ-axis ≤ 0.08°\nX-axis ≤ 0.03°'],
     ['WPH', '', 'more than 300WPH'],
   ];
   function specHTML(it) {
@@ -401,7 +411,7 @@
     const has = String(n.content || '').trim();
     return `<button class="card note" data-note="${esc(it.id)}">
       <div class="note-h"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12l-4 4H4z"/><path d="M16 20v-4h4"/><path d="M8 9h8M8 13h5"/></svg>${esc(it.label || '기타사항')}</div>
-      <div class="note-c" style="${noteStyle(n.style).css}">${has ? esc(n.content) : '<span class="muted">눌러서 입력하세요</span>'}</div>
+      <div class="note-c" style="${noteStyle(n.style).css}">${has ? noteBody(n.content) : '<span class="muted">눌러서 입력하세요</span>'}</div>
       ${n.updatedAt ? `<div class="note-m">${esc(n.updatedAt)}${n.updatedBy ? ' · ' + esc(n.updatedBy) : ''}</div>` : ''}
     </button>`;
   }
@@ -412,30 +422,61 @@
     const n = (state.data.notes || {})[id] || {};
     $('#mSlot').textContent = n.updatedAt ? `최종 수정 ${n.updatedAt}${n.updatedBy ? ' · ' + n.updatedBy : ''}` : '프로젝트 외 공지, 설비, 일정 등';
     $('#mTitle').textContent = it.label || '기타사항';
-    const ns = noteStyle(n.style);
+    // rich editor: select text, then 굵게 (Ctrl+B) / 크게 / 아주 크게; stored as sanitized HTML with a '<!--rt-->' marker
     $('#mBody').innerHTML = `
       <div class="note-tools">
-        <span class="hint">글자 크기</span><div class="seg2" id="noteSize">${NOTE_SIZES.map(x => `<button type="button" data-v="${x[0]}" class="${ns.size === x[0] ? 'on' : ''}">${x[1]}</button>`).join('')}</div>
-        <span class="hint">굵기</span><div class="seg2" id="noteWeight"><button type="button" data-v="n" class="${ns.weight === 'n' ? 'on' : ''}">보통</button><button type="button" data-v="b" class="${ns.weight === 'b' ? 'on' : ''}" style="font-weight:800">굵게</button></div>
+        <button type="button" class="tb" data-cmd="bold" title="굵게 (Ctrl+B)"><b>B</b> 굵게</button>
+        <button type="button" class="tb" data-size="l" title="선택한 글자 크게">가 크게</button>
+        <button type="button" class="tb" data-size="xl" title="선택한 글자 아주 크게"><span style="font-size:1.15em">가</span> 아주 크게</button>
+        <button type="button" class="tb" data-cmd="removeFormat" title="선택한 부분 서식 지우기">서식 지우기</button>
+        <span class="hint">글자를 선택한 뒤 버튼을 누르세요 · Ctrl+B 굵게</span>
       </div>
-      <label class="f">내용<textarea id="noteText" rows="10" placeholder="예) 10/24 클린룸 점검 예정, 메인 전기 차단기 이전 작업 등" style="${ns.css}">${esc(n.content || '')}</textarea></label>
+      <div class="f"><span>내용</span><div id="noteText" class="note-ed" contenteditable="true" style="${noteStyle(n.style).css}" data-ph="예) 10/24 클린룸 점검 예정, 메인 전기 차단기 이전 작업 등">${noteBody(n.content)}</div></div>
       <div class="row-end"><button class="btn primary" id="noteSave">저장</button></div>`;
     openModal(true);
-    const cur = () => `${($('#noteSize .on') || {}).dataset.v || 'm'}|${($('#noteWeight .on') || {}).dataset.v || 'n'}`;
-    $$('#noteSize, #noteWeight').forEach(g => g.addEventListener('click', e => {
-      const b = e.target.closest('button'); if (!b) return;
-      g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-      $('#noteText').setAttribute('style', noteStyle(cur()).css);
-    }));
+    const ed = $('#noteText');
+    $('.note-tools').addEventListener('mousedown', e => { if (e.target.closest('.tb')) e.preventDefault(); }); // keep the selection
+    $('.note-tools').addEventListener('click', e => {
+      const b = e.target.closest('.tb'); if (!b) return;
+      ed.focus();
+      if (b.dataset.cmd) { document.execCommand(b.dataset.cmd, false, null); return; }
+      document.execCommand('fontSize', false, '7');
+      $$('font[size="7"]', ed).forEach(f => { const sp = document.createElement('span'); sp.className = 'fs-' + b.dataset.size; sp.innerHTML = f.innerHTML; f.replaceWith(sp); });
+    });
     $('#noteSave').addEventListener('click', () => {
-      const content = $('#noteText').value; const style = cur();
+      const html = cleanNoteHTML(ed.innerHTML);
+      const plain = ed.innerText.replace(/\n{3,}/g, '\n\n').trim();
+      const rich = /<(b|strong|span)\b/i.test(html);
+      const content = rich ? '<!--rt-->' + html : plain;
+      const style = n.style || '';
       closeModal();
       mutate({ action: 'saveNote', id, content, style }, '기타사항이 저장되었습니다', (d, user) => {
         d.notes = d.notes || {}; d.notes[id] = { content, style, updatedAt: nowStr(), updatedBy: user };
       });
     });
-    setTimeout(() => $('#noteText').focus(), 60);
+    setTimeout(() => ed.focus(), 60);
   }
+  // note content: plain text (escaped) or '<!--rt-->' + sanitized HTML (b/strong/br/div/p + span.fs-l/.fs-xl only)
+  function cleanNoteHTML(html) {
+    const box = document.createElement('div'); box.innerHTML = String(html || '');
+    const walk = (node) => {
+      [...node.childNodes].forEach(c => {
+        if (c.nodeType === 3) return;
+        if (c.nodeType !== 1) { c.remove(); return; }
+        walk(c);
+        const tag = c.tagName;
+        if (tag === 'B' || tag === 'STRONG') { const b = document.createElement('b'); b.innerHTML = c.innerHTML; c.replaceWith(b); return; }
+        if (tag === 'BR') return;
+        if (tag === 'DIV' || tag === 'P') { const d = document.createElement('div'); d.innerHTML = c.innerHTML; c.replaceWith(d); return; }
+        if (tag === 'SPAN' && /\bfs-(l|xl)\b/.test(c.className)) { const sp = document.createElement('span'); sp.className = (c.className.match(/fs-(xl|l)/) || [])[0]; sp.innerHTML = c.innerHTML; c.replaceWith(sp); return; }
+        if (tag === 'SPAN' && /font-weight:\s*(bold|[6-9]00)/i.test(c.getAttribute('style') || '')) { const b = document.createElement('b'); b.innerHTML = c.innerHTML; c.replaceWith(b); return; }
+        c.replaceWith(...c.childNodes); // unwrap anything else
+      });
+    };
+    walk(box);
+    return box.innerHTML;
+  }
+  const noteBody = (content) => { const c = String(content || ''); return c.startsWith('<!--rt-->') ? cleanNoteHTML(c.slice(9)) : esc(c); };
 
   function renderProjects() {
     const all = projects();
