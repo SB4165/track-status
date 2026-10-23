@@ -651,5 +651,10 @@ th.flt .nc-th, th.flt .nc-th i { color: var(--accent); opacity: 1; }
 .proc-side .ps-f .ps-l .parbar { flex: none; display: block; width: 3px; height: 12px; margin: 0 5px 0 6px; background: #f59e0b; border-radius: 2px; }
 /* parallel group: one combined badge centred across both rows */
 .proc-side li.par-s { z-index: 1; }
-.proc-side li.par-s em { transform: translateY(13px); }
-.proc-side.compact li.par-s em { transform: translateY(11px); }
+.proc-side ol { grid-template-columns: minmax(0, 1fr); }
+.proc-side li { min-width: 0; }
+.proc-side li.par .nm { white-space: nowrap; overflow: hidden; letter-spacing: -.02em; }
+.proc-side li.par-s { padding-right: 30px; }
+.proc-side li.par-s em { position: absolute; right: 6px; top: 50%; transform: translateY(calc(-50% + 13px)); }
+.proc-side.compact li.par-s { padding-right: 24px; }
+.proc-side.compact li.par-s em { right: 4px; transform: translateY(calc(-50% + 11px)); }
