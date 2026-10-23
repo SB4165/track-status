@@ -34,24 +34,25 @@ const STEPS = [
   { no: 9,  name: 'X1/X2 핸드레벨 촬영',     file: true },
   { no: 10, name: '물방울 JIG 레벨 촬영',    file: true },
   { no: 11, name: '로봇 배선 해체(제조)',    file: false },
-  { no: 12, name: '클리닝(제조)',            file: false },
-  { no: 13, name: '패킹리스트 확인',         file: false },
-  { no: 14, name: '출하사진 촬영',           file: true },
-  { no: 15, name: '패킹 서류 스캔 및 인쇄',  file: true },
+  { no: 12, name: '패킹 서류 스캔 및 인쇄',  file: true,  par: 'A' }, // par: same key = parallel group (may run at the same time)
+  { no: 13, name: '클리닝(제조)',            file: false, par: 'A' },
+  { no: 14, name: '패킹리스트(영업) 확인',   file: false },
+  { no: 15, name: '출하사진 촬영',           file: true },
   { no: 16, name: '패킹(서류 동봉)',         file: false },
   { no: 17, name: '출하',                   file: false },
 ];
 // STEPS_VERSION history (existing Steps rows migrate automatically, Steps sheet backed up first)
 //  v2: inserted 11 (로봇 배선 해체), added 출하완료 at the end
 //  v3: inserted 12 (클리닝)
-const STEPS_VERSION = '4'; // v4: step 17 renamed 출하완료 -> 출하 (names refreshed by migration)
+//  v4: step 17 renamed 출하완료 -> 출하
+const STEPS_VERSION = '5'; // v5: 패킹 서류 스캔 moved before 클리닝 (12·13 parallel group), 패킹리스트(영업) 확인 renamed
 
 // Floor plan on a 1000-wide canvas (height = lowest item + margin) (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
 // type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note | spec (robot spec table)
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
 const LAYOUT_VERSION = '9';
-const PACK_MIN_STEP = 12; // 클리닝(제조)
+const PACK_MIN_STEP = 12; // start of the 12·13 parallel group (패킹 서류 스캔 / 클리닝)
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
 const DEFAULT_LAYOUT = [
@@ -541,7 +542,14 @@ function saveNote_(b) {
 
 // steps before stepNo: not completed -> 완료 (work done, records just not entered) ; steps from stepNo: 생략 -> 대기
 // a step counts as done when it is before the start step; starting at the last step (출하완료) means everything is done
-function startDone_(no, start) { return no < start || start >= STEPS.length; }
+// first step of the parallel group containing step n (n itself when not grouped)
+function groupStart_(n) {
+  const d = STEPS[n - 1];
+  if (!d || !d.par) return n;
+  return Math.min.apply(null, STEPS.filter(s => s.par === d.par).map(s => s.no));
+}
+// starting at a grouped step keeps every step of that group open
+function startDone_(no, start) { return no < groupStart_(start) || start >= STEPS.length; }
 function skipDetail_(n) { return n >= STEPS.length ? n + '. ' + STEPS[STEPS.length - 1].name + ' (전 공정 완료 처리, 출하완료로 이동)' : n + '번 공정부터 진행 (이전 공정 완료 처리)'; }
 function applySkip_(st, vals, pid, n) {
   const si = SHEETS.Steps.indexOf('status');
@@ -794,7 +802,7 @@ function migrate_() {
   lock.waitLock(30000);
   try {
     const stamp = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm');
-    if (props.getProperty('STEPS_VERSION') !== STEPS_VERSION) { migrateSteps_(stamp); props.setProperty('STEPS_VERSION', STEPS_VERSION); }
+    if (props.getProperty('STEPS_VERSION') !== STEPS_VERSION) { migrateSteps_(stamp, Number(props.getProperty('STEPS_VERSION') || 0)); props.setProperty('STEPS_VERSION', STEPS_VERSION); }
     if (props.getProperty('LAYOUT_VERSION') !== LAYOUT_VERSION) { migrateLayout_(stamp); props.setProperty('LAYOUT_VERSION', LAYOUT_VERSION); }
   } finally {
     lock.releaseLock();
@@ -813,7 +821,7 @@ function migrateLayout_(stamp) {
 }
 
 // step-list migration by row count: 14 (v1) -> 16 (v2) -> 17 (v3); every run also refreshes step names/file flags (v4 rename)
-function migrateSteps_(stamp) {
+function migrateSteps_(stamp, prev) {
   const ss = getDb_();
   const sh = ss.getSheetByName('Steps');
   const h = SHEETS.Steps;
@@ -849,6 +857,14 @@ function migrateSteps_(stamp) {
       rows.push(blank(id, 16, pState[id] === 'shipped' ? '완료' : '대기'));
     }
     if (rows.length === 16) insertAt(id, rows, 12); // v2 -> v3
+    if (prev < 5 && rows.length === 17) { // v4 -> v5: old 12 클리닝,13 패킹리스트,14 출하사진,15 서류 스캔 -> 13,14,15,12
+      const map = { 12: 13, 13: 14, 14: 15, 15: 12 };
+      rows.forEach(r => { const no = Number(r[I('stepNo')]); if (map[no]) r[I('stepNo')] = map[no]; });
+      // moved-forward 서류 스캔: done when a later step (14+) already started (same rule as earlier inserts)
+      const scan = rows.find(r => Number(r[I('stepNo')]) === 12);
+      const later = rows.some(r => Number(r[I('stepNo')]) >= 14 && String(r[I('status')]) !== '대기') || pState[id] === 'shipped';
+      if (scan && String(scan[I('status')]) === '대기' && later) scan[I('status')] = '완료';
+    }
     rows.sort((a, b) => Number(a[I('stepNo')]) - Number(b[I('stepNo')]));
     rows.forEach(r => {
       const d = STEPS[Number(r[I('stepNo')]) - 1];

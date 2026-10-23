@@ -94,6 +94,8 @@
     const done = steps.filter(isDone).length;
     const total = steps.length || 14;
     const cur = steps.find(s => !isDone(s)) || null;
+    // parallel group: every open step of the current step's group is "current"
+    const curGroup = cur && parOf(cur.stepNo) ? steps.filter(s => !isDone(s) && parOf(s.stepNo) === parOf(cur.stepNo)) : (cur ? [cur] : []);
     const curNo = cur ? Number(cur.stepNo) : total + 1;
     const fixing = steps.filter(s => s.status === '조치중');
     const openIssues = steps.filter(s => !isDone(s) && String(s.issue || '').trim());
@@ -110,7 +112,7 @@
     const manualIssue = String(p.summaryIssue || '').trim();
     const prog = manualProg || autoProg;
     const issue = manualIssue || autoIssue;
-    return { done, skipped, total, pct, cur, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
+    return { done, skipped, total, pct, cur, curGroup, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
   }
   // compress free text into a short summary: split numbered/line items, drop numbering and
   // non-numeric (…) notes, one item per line
@@ -131,7 +133,10 @@
   function cssVar(s) { return { '대기': '--st-wait', '진행': '--st-run', '조치중': '--st-fix', '완료': '--st-done', '보류': '--st-hold', '생략': '--st-skip' }[s] || '--st-wait'; }
   // pseudo project for a new registration starting at step `start` (for pack rule / options)
   // done-before-start rule; starting at the last step (출하완료) = every step done
-  const startDone = (no, start, total) => no < start || start >= total;
+  // parallel groups (stepDefs[].par): starting at a grouped step keeps the whole group open
+  const parOf = (no) => { const d = ((state.data && state.data.stepDefs) || [])[Number(no) - 1]; return d && d.par ? d.par : ''; };
+  const groupStart = (n) => { const g = parOf(n); return g ? Math.min(...state.data.stepDefs.filter(s => s.par === g).map(s => s.no)) : n; };
+  const startDone = (no, start, total) => no < groupStart(start) || start >= total;
   // starting at the last step (출하완료) also ships the project (moves to 출하완료, slot cleared)
   const applySkipLocal = (p, n) => { const total = (p.steps || []).length; p.steps.forEach(s => { const no = Number(s.stepNo); if (startDone(no, n, total) && !['완료', '생략'].includes(s.status)) s.status = '완료'; if (!startDone(no, n, total) && s.status === '생략') s.status = '대기'; }); if (n >= total && p.state === 'active') { p.state = 'shipped'; p.slot = null; } };
   const fakeProj = (start) => { const defs = (state.data && state.data.stepDefs) || []; return { id: null, steps: defs.map(s => ({ stepNo: s.no, status: startDone(s.no, start, defs.length) ? '완료' : '대기' })) }; };
@@ -305,8 +310,10 @@
     side.classList.toggle('compact', w < 176);
     side.style.right = `calc(100% + ${free < 196 ? 6 : 14}px)`;
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
-    const cnt = {}; activeProjects().forEach(p => { const i = projectInfo(p); if (i.cur) cnt[i.cur.stepNo] = (cnt[i.cur.stepNo] || 0) + 1; });
-    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수</div>`;
+    const cnt = {}; activeProjects().forEach(p => { projectInfo(p).curGroup.forEach(s => { cnt[s.stepNo] = (cnt[s.stepNo] || 0) + 1; }); });
+    const defs = state.data.stepDefs || [];
+    const parPos = (s) => { if (!s.par) return ''; const g = defs.filter(x => x.par === s.par); return g.length < 2 ? '' : s.no === g[0].no ? 'par par-s' : s.no === g[g.length - 1].no ? 'par par-e' : 'par'; };
+    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${parPos(s).includes('par-s') ? '<i class="pt">병행</i>' : ''}${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><em>n</em> 현재 진행 프로젝트 수${defs.some(s => s.par) ? '<br><span class="pl"></span> 병행 공정 (동시 진행 가능)' : ''}</div>`;
     followProcSide();
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
@@ -342,12 +349,12 @@
     const i = projectInfo(p);
     const segs = (p.steps || []).map(s => `<i class="s-${esc(s.status)}" title="${esc(s.stepNo + '. ' + s.stepName + ' · ' + s.status)}"></i>`).join('');
     const curHtml = i.cur
-      ? `<div class="step"><b>${i.cur.stepNo}. ${esc(i.cur.stepName)}</b>${pill(i.cur.status)}</div>`
+      ? i.curGroup.map(s => `<div class="step ${i.curGroup.length > 1 ? 'g' : ''}"><b>${s.stepNo}. ${esc(s.stepName)}</b>${pill(s.status)}</div>`).join('')
       : `<div class="step"><b>전 공정 완료</b>${pill('완료')}</div>`;
     return `<button class="card ${pack ? 'pack' : ''} ${i.hasIssue ? 'has-issue' : ''}" draggable="true" data-pid="${esc(p.id)}" data-st="${esc(i.curStatus)}" title="${esc(p.projectName)}">
       ${typesHTML(slot)}
       <div class="card-top">${tag}<span class="pname">${esc(p.projectName)}</span></div>
-      <div class="cur"><div class="lbl">${pack ? esc(slotName(slot)) + ' · ' : ''}현재 공정</div>${curHtml}</div>
+      <div class="cur"><div class="lbl">${pack ? esc(slotName(slot)) + ' · ' : ''}현재 공정${i.curGroup.length > 1 ? '<span class="partag">병행</span>' : ''}</div>${curHtml}</div>
       <div class="segs">${segs}</div>
       <div class="pct">${i.done}/${i.total} 완료 · ${i.pct}%</div>
       <div class="sum">
@@ -541,7 +548,7 @@
       const sel = p.state === 'active'
         ? `<select class="slotsel ${p.slot ? 'set' : ''}" data-pid="${esc(p.id)}" aria-label="배치">${slotOptions(p.slot, p, true)}</select>`
         : '<span class="shipbadge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></svg>출하완료</span>';
-      const cs = i.cur ? `<span class="t">${i.cur.stepNo}. ${esc(i.cur.stepName)}</span>${pill(i.cur.status)}` : `<span class="t">전 공정 완료</span>${pill('완료')}`;
+      const cs = i.cur ? i.curGroup.map(s => `<span class="cs1">${i.curGroup.length > 1 ? '<span class="partag">병행</span>' : ''}<span class="t">${s.stepNo}. ${esc(s.stepName)}</span>${pill(s.status)}</span>`).join('') : `<span class="t">전 공정 완료</span>${pill('완료')}`;
       return `<div class="prow ${state.psel.has(p.id) ? 'picked' : ''}" data-pid="${esc(p.id)}">
         <div class="ck"><input type="checkbox" data-pck="${esc(p.id)}" ${state.psel.has(p.id) ? 'checked' : ''} aria-label="선택"></div>
         <div class="sl">${sel}</div>
@@ -616,7 +623,7 @@
       const sub = String(s.issue || '').trim() && s.status !== '완료'
         ? `<small class="issue">이슈: ${esc(s.issue)}</small>`
         : (String(s.progress || '').trim() ? `<small>${esc(s.progress)}</small>` : '');
-      return `<div class="st ${open ? 'open' : ''} ${i.cur && Number(i.cur.stepNo) === no ? 'cur-step' : ''}" data-step="${no}">
+      return `<div class="st ${open ? 'open' : ''} ${i.curGroup.some(s => Number(s.stepNo) === no) ? 'cur-step' : ''}" data-step="${no}">
         <button class="st-h" data-toggle="${no}">
           <span class="st-n">${no}</span>
           <span class="st-name">${esc(s.stepName)}${sub}</span>
@@ -811,7 +818,7 @@
         const ids = new Set(ps.map(p => p.id));
         const sheet1 = ps.map(p => { const i = projectInfo(p); return {
           '배치': p.slot ? slotName(p.slot) : '', '프로젝트명': p.projectName, '상태': p.state === 'active' ? '진행중' : '출하완료',
-          '현재 공정': i.cur ? `${i.cur.stepNo}. ${i.cur.stepName}` : '전 공정 완료', '현재 공정 상태': i.curStatus,
+          '현재 공정': i.cur ? i.curGroup.map(s => `${s.stepNo}. ${s.stepName}`).join(' + ') : '전 공정 완료', '현재 공정 상태': i.curStatus,
           '완료 공정': `${i.done}/${i.total}`, '진척률(%)': i.pct, '진행 요약': i.prog, '이슈 요약': i.issue,
           '등록일': p.createdAt, '등록자': p.createdBy, '최종 수정': p.updatedAt, '수정자': p.updatedBy,
         }; });
@@ -916,7 +923,7 @@
     } else if (k === 'ok') {
       const p = r.s.p; const i = projectInfo(p); const ty = p.slot ? slotTypes(p.slot) : [];
       slot = p.state !== 'active' ? '출하완료' : p.slot ? esc(slotName(p.slot)) + (ty.length ? ' [' + esc(ty.join('/')) + ']' : '') : '미배치';
-      cur = `<button class="sy-link" data-open="${esc(p.id)}">${i.cur ? `${pill(i.cur.status)} ${i.cur.stepNo}. ${esc(i.cur.stepName)}` : `${pill('완료')} 전 공정 완료`}</button>`;
+      cur = `<button class="sy-link" data-open="${esc(p.id)}">${i.cur ? i.curGroup.map(s => `${pill(s.status)} ${s.stepNo}. ${esc(s.stepName)}`).join(' + ') : `${pill('완료')} 전 공정 완료`}</button>`;
     } else cur = '<span class="muted">관리 대상 아님</span>';
     return `<tr class="${k !== 'wait' ? 'done' : ''} ${on ? 'on' : ''}" data-name="${n}"><td class="ck"><input type="checkbox" data-ck="${n}" ${on ? 'checked' : ''} aria-label="선택"></td><td>${idx + 1}</td><td><span class="sy-st ${k}">${r.s.t}</span></td><td>${r.d ? r.d.replace(/-/g, '.') : (String(r.ship || '').trim() ? esc(r.ship) : '<span class="muted">미정</span>')}</td><td><b>${n}</b></td><td>${esc(r.g)}</td><td>${esc(r.type)}</td><td>${start}</td><td>${slot}</td><td>${cur}</td></tr>`;
   }
@@ -1336,8 +1343,8 @@
 
   // ===================== Demo backend =====================
   const Demo = (() => {
-    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '클리닝(제조)', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)', '출하'];
-    const FILE = [4, 5, 6, 7, 8, 9, 10, 14, 15];
+    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹 서류 스캔 및 인쇄', '클리닝(제조)', '패킹리스트(영업) 확인', '출하사진 촬영', '패킹(서류 동봉)', '출하'];
+    const FILE = [4, 5, 6, 7, 8, 9, 10, 12, 15];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
       L('wall-top', 'wall', null, '', 40, 6, 952, 18), L('wall-left', 'wall', null, '', 8, 235, 24, 402),
@@ -1360,7 +1367,7 @@
       }),
     });
     const db = [
-      mk('P1', 9, names[0], 12), mk('P2', 7, names[1], 6, { 7: { status: '조치중', issue: 'Cycle 중 Z축 이음 발생, 벨트 텐션 재조정 필요' } }),
+      mk('P1', 9, names[0], 11, { 13: { status: '진행', owner: '곽승범' } }), mk('P2', 7, names[1], 6, { 7: { status: '조치중', issue: 'Cycle 중 Z축 이음 발생, 벨트 텐션 재조정 필요' } }),
       mk('P3', 6, names[2], 3), mk('P4', 4, names[3], 1, { 2: { status: '조치중', issue: 'QC 지적사항 1건 미조치 (커버 도장)' } }),
       mk('P5', 3, names[4], 10), mk('P6', 2, names[5], 0, { 1: { status: '보류', issue: '자재 미입고' } }),
       mk('P7', null, names[6], 0), mk('P8', null, names[7], 2),
@@ -1377,7 +1384,7 @@
       NR(2902, false, '', '08/11', 'ECP352', 'MAGNET', 'B-05-002', 1, '기구', '외관손상', '최진혁', '김나현', '대상 외 프로젝트(필터됨)'),
     ];
     const ncr = []; let ncrAt = '';
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13].includes(i + 1) ? 'A' : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));
