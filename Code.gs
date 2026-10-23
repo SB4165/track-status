@@ -41,9 +41,9 @@ const STEPS_VERSION = '3';
 
 // Floor plan on a 1000-wide canvas (height = lowest item + margin) (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
-// type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note
+// type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note | spec (robot spec table)
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
-const LAYOUT_VERSION = '8';
+const LAYOUT_VERSION = '9';
 const PACK_MIN_STEP = 12; // 클리닝(제조)
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
@@ -67,14 +67,15 @@ const DEFAULT_LAYOUT = [
   ['pack-6',    'pack',    14, '패킹 6',                 392, 433, 140, 190, true],
   ['pack-7',    'pack',    15, '패킹 7',                 540, 433, 140, 190, true],
   ['pack-8',    'pack',    16, '패킹 8',                 688, 433, 140, 190, true],
-  ['note-1',    'note',    '', '기타사항',               840, 235, 152, 388, true],
+  ['note-1',    'note',    '', '기타사항',               840, 235, 152, 190, true],
+  ['spec-1',    'spec',    '', 'TRACK IMMERSION robot specification', 840, 433, 152, 190, true],
 ];
 
 const SHEETS = {
   Layout:   LAYOUT_HEAD,
   Projects: ['id', 'slot', 'projectName', 'state', 'summaryProgress', 'summaryIssue', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Steps:    ['projectId', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'fileRequired', 'fileCount', 'fileCheckedAt', 'updatedAt', 'updatedBy'],
-  Notes:    ['id', 'content', 'updatedAt', 'updatedBy'],
+  Notes:    ['id', 'content', 'updatedAt', 'updatedBy', 'style'],
   History:  ['at', 'by', 'action', 'projectId', 'projectName', 'slot', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'detail'],
   SyncState: ['name', 'state', 'at', 'by'],
 };
@@ -91,6 +92,7 @@ function setup() {
   Object.keys(SHEETS).forEach(name => {
     let sh = ss.getSheetByName(name);
     const head = SHEETS[name];
+    if (name === 'Notes' && sh && sh.getLastRow() > 0 && String(sh.getRange(1, 5).getValue()) === '') sh.getRange(1, 5).setValue('style');
     if (sh && sh.getLastRow() > 0) {
       const cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String);
       if (cur.slice(0, head.length).join('|') !== head.join('|')) {
@@ -283,7 +285,7 @@ function bootstrap_() {
     delete p._row;
   });
   const notes = {};
-  readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy }; });
+  readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy, style: String(n.style || '') }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
   const syncExcluded = getDb_().getSheetByName('SyncState') ? readTable_('SyncState').filter(r => r.state === 'excluded').map(r => String(r.name)) : [];
   return { layout, projects, notes, keyRequired, syncExcluded, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
@@ -477,9 +479,10 @@ function saveNote_(b) {
   const id = String(b.id || '').trim();
   if (!id) throw new Error('기타사항 칸 ID가 필요합니다.');
   const sh = getDb_().getSheetByName('Notes');
+  if (String(sh.getRange(1, 5).getValue()) !== 'style') sh.getRange(1, 5).setValue('style'); // text size/weight column
   const row = findRow_(sh, r => r[0] === id);
-  const vals = [[id, String(b.content || ''), now_(), b.user || '']];
-  if (row < 0) appendText_(sh, vals[0]); else sh.getRange(row, 1, 1, 4).setNumberFormat('@').setValues(vals);
+  const vals = [[id, String(b.content || ''), now_(), b.user || '', String(b.style || '')]];
+  if (row < 0) appendText_(sh, vals[0]); else sh.getRange(row, 1, 1, 5).setNumberFormat('@').setValues(vals);
   history_(b.user, 'note', null, null, id + ': ' + String(b.content || ''));
   return bootstrap_();
 }

@@ -276,7 +276,20 @@
   const planH = () => Math.max(300, ...((state.data && state.data.layout) || []).map(l => Number(l.y) + Number(l.h) + 8));
   // floor plan always uses the full width (fit-to-screen shrinking removed on request); only re-fit card summaries
   function fitPlan() {
-    if (state.tab === 'board') fitCards();
+    if (state.tab === 'board') { fitCards(); placeProcSide(); }
+  }
+  // full process list in the free space left of the floor plan (plan size unchanged; hidden when there is no room)
+  function placeProcSide() {
+    const wrap = $('.plan-wrap'); if (!wrap || !state.data) return;
+    let side = $('#procSide');
+    if (!side) { side = document.createElement('aside'); side.id = 'procSide'; side.className = 'proc-side'; wrap.appendChild(side); }
+    const free = wrap.getBoundingClientRect().left;
+    if (window.innerWidth <= 900 || free < 196) { side.hidden = true; return; }
+    const w = Math.min(250, free - 20);
+    side.style.width = w + 'px'; side.hidden = false;
+    side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
+    const cnt = {}; activeProjects().forEach(p => { const i = projectInfo(p); if (i.cur) cnt[i.cur.stepNo] = (cnt[i.cur.stepNo] || 0) + 1; });
+    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${s.file ? '<i class="fb">파일</i>' : ''}${cnt[s.no] ? `<em title="현재 이 공정인 프로젝트">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><i class="fb">파일</i> NAS 파일 확인 공정 · <em>n</em> 현재 진행 프로젝트 수 · 보라 = 패킹 칸 배치 가능</div>`;
   }
   // summaries use up to 3 lines, fewer when a card has no room (full text stays in the tooltip)
   // each of 진행/이슈 shows up to 6 lines (as space allows); when the card is full, the longer block gives up a line first (min 1 each).
@@ -353,22 +366,42 @@
       if (it.type === 'pack') return `<div class="pl" data-pack="${it.slot}" style="${st}">${cardHTML(it.slot, map[it.slot])}</div>`;
       if (it.type === 'slot') return `<div class="pl" style="${st}">${cardHTML(it.slot, map[it.slot])}</div>`;
       if (it.type === 'note') return `<div class="pl" style="${st}">${noteHTML(it)}</div>`;
+      if (it.type === 'spec') return `<div class="pl" style="${st}">${specHTML(it)}</div>`;
       return '';
     }).join('');
     requestAnimationFrame(fitCards);
 
     const notes = d.layout.filter(l => l.type === 'note');
+    const specs = d.layout.filter(l => l.type === 'spec');
     $('#slotList').innerHTML = (notes.length ? '<div class="sec-t" style="grid-column:1/-1">기타사항</div>' + notes.map(noteHTML).join('') : '')
+      + specs.map(s => `<div style="grid-column:1/-1">${specHTML(s)}</div>`).join('')
       + '<div class="sec-t" style="grid-column:1/-1">배치 번호순</div>'
       + slotNos().map(n => cardHTML(n, map[n])).join('');
   }
 
+  // robot specification table (layout type 'spec')
+  const SPEC = [
+    ['Wafer', '(Warpage, Thickness, Type etc.)', '0.775mm Si wafer, max warpage: 0.5mm, 1mm warpage in the future\n0.5-1.2mm glass wafer, max warpage: 0.5mm'],
+    ['Vibration', '', '≤ 0.3mm (end effector)'],
+    ['Repeatablity + AWC', '', 'MPR ≤ 0.1mm, STR, ITR, EMR, ESR ≤ 0.15mm', true],
+    ['Noise', '', 'SEMI standard'],
+    ['Particle', '', 'ISO Standard Class 1'],
+    ['Leveling of robot', '', 'Y-axis ≤ 0.08°, Z-axis ≤ 0.08°, X-axis ≤ 0.03°'],
+    ['WPH', '', 'more than 300WPH'],
+  ];
+  function specHTML(it) {
+    return `<div class="spec"><div class="spec-h">${esc(it.label || 'TRACK IMMERSION robot specification')}</div>
+      <table><thead><tr><th>NO</th><th>Item</th><th>Specification</th></tr></thead><tbody>${SPEC.map((r, k) => `<tr class="${r[3] ? 'hl' : ''}"><td class="sn">${k + 1}</td><td class="it">${esc(r[0])}${r[1] ? `<small>${esc(r[1])}</small>` : ''}</td><td class="sp">${esc(r[2])}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  // note text style: 'size|weight' (size s/m/l/xl, weight n/b)
+  const NOTE_SIZES = [['s', '작게', '.78em'], ['m', '보통', '.88em'], ['l', '크게', '1em'], ['xl', '아주 크게', '1.15em']];
+  const noteStyle = (st) => { const [sz, wt] = String(st || '').split('|'); const s = NOTE_SIZES.find(x => x[0] === sz) || NOTE_SIZES[1]; return { size: s[0], weight: wt === 'b' ? 'b' : 'n', css: `font-size:${s[2]};font-weight:${wt === 'b' ? 700 : 400}` }; };
   function noteHTML(it) {
     const n = (state.data.notes || {})[it.id] || {};
     const has = String(n.content || '').trim();
     return `<button class="card note" data-note="${esc(it.id)}">
       <div class="note-h"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12l-4 4H4z"/><path d="M16 20v-4h4"/><path d="M8 9h8M8 13h5"/></svg>${esc(it.label || '기타사항')}</div>
-      <div class="note-c">${has ? esc(n.content) : '<span class="muted">눌러서 입력하세요</span>'}</div>
+      <div class="note-c" style="${noteStyle(n.style).css}">${has ? esc(n.content) : '<span class="muted">눌러서 입력하세요</span>'}</div>
       ${n.updatedAt ? `<div class="note-m">${esc(n.updatedAt)}${n.updatedBy ? ' · ' + esc(n.updatedBy) : ''}</div>` : ''}
     </button>`;
   }
@@ -379,15 +412,26 @@
     const n = (state.data.notes || {})[id] || {};
     $('#mSlot').textContent = n.updatedAt ? `최종 수정 ${n.updatedAt}${n.updatedBy ? ' · ' + n.updatedBy : ''}` : '프로젝트 외 공지, 설비, 일정 등';
     $('#mTitle').textContent = it.label || '기타사항';
+    const ns = noteStyle(n.style);
     $('#mBody').innerHTML = `
-      <label class="f">내용<textarea id="noteText" rows="10" placeholder="예) 10/24 클린룸 점검 예정, 메인 전기 차단기 이전 작업 등">${esc(n.content || '')}</textarea></label>
+      <div class="note-tools">
+        <span class="hint">글자 크기</span><div class="seg2" id="noteSize">${NOTE_SIZES.map(x => `<button type="button" data-v="${x[0]}" class="${ns.size === x[0] ? 'on' : ''}">${x[1]}</button>`).join('')}</div>
+        <span class="hint">굵기</span><div class="seg2" id="noteWeight"><button type="button" data-v="n" class="${ns.weight === 'n' ? 'on' : ''}">보통</button><button type="button" data-v="b" class="${ns.weight === 'b' ? 'on' : ''}" style="font-weight:800">굵게</button></div>
+      </div>
+      <label class="f">내용<textarea id="noteText" rows="10" placeholder="예) 10/24 클린룸 점검 예정, 메인 전기 차단기 이전 작업 등" style="${ns.css}">${esc(n.content || '')}</textarea></label>
       <div class="row-end"><button class="btn primary" id="noteSave">저장</button></div>`;
     openModal(true);
+    const cur = () => `${($('#noteSize .on') || {}).dataset.v || 'm'}|${($('#noteWeight .on') || {}).dataset.v || 'n'}`;
+    $$('#noteSize, #noteWeight').forEach(g => g.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      $('#noteText').setAttribute('style', noteStyle(cur()).css);
+    }));
     $('#noteSave').addEventListener('click', () => {
-      const content = $('#noteText').value;
+      const content = $('#noteText').value; const style = cur();
       closeModal();
-      mutate({ action: 'saveNote', id, content }, '기타사항이 저장되었습니다', (d, user) => {
-        d.notes = d.notes || {}; d.notes[id] = { content, updatedAt: nowStr(), updatedBy: user };
+      mutate({ action: 'saveNote', id, content, style }, '기타사항이 저장되었습니다', (d, user) => {
+        d.notes = d.notes || {}; d.notes[id] = { content, style, updatedAt: nowStr(), updatedBy: user };
       });
     });
     setTimeout(() => $('#noteText').focus(), 60);
@@ -1111,7 +1155,7 @@
       L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 185), L('slot-1', 'slot', 1, 'MPR', 40, 426, 192, 185),
       L('door-1', 'door', null, '출입문', 40, 617, 192, 20),
       ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 244 + (i % 4) * 148, i < 4 ? 235 : 433, 140, 190)),
-      L('note-1', 'note', null, '기타사항', 840, 235, 152, 388),
+      L('note-1', 'note', null, '기타사항', 840, 235, 152, 190), L('spec-1', 'spec', null, 'TRACK IMMERSION robot specification', 840, 433, 152, 190),
     ];
     const notes = { 'note-1': { content: '10/24(금) 클린룸 정기 점검 예정\n메인 전기 차단기 위치 이동 작업 대기', updatedAt: '2026-10-21 09:00', updatedBy: '곽승범' } };
     const names = ['RD-SH-13-013 EMR#1', 'RD-SH-13-013 ESR#2', 'RD-SH-13-013 ESR#3', 'RD-SH-13-013 FER#0', 'RD-SH-13-013 MPR#4', 'RD-SH-13-013 MPR#5', 'RD-SH-13-013 MPR#6', 'MISC-STR10 #1', 'MISC-STR11 #1', 'MISC-FER0 #1', 'MISC-MPR7 #1', 'MISC-MPR9 #1'];
@@ -1149,7 +1193,7 @@
       },
       post(b) {
         const fail = (msg) => wait({ ok: false, error: msg });
-        if (b.action === 'saveNote') { notes[b.id] = { content: b.content, updatedAt: now(), updatedBy: b.user }; log(b, '기타사항 수정', null, null, b.content); return wait(snap()); }
+        if (b.action === 'saveNote') { notes[b.id] = { content: b.content, style: b.style || '', updatedAt: now(), updatedBy: b.user }; log(b, '기타사항 수정', null, null, b.content); return wait(snap()); }
         if (b.action === 'createProject') {
           if (db.some(p => p.state === 'active' && p.projectName === b.projectName)) return fail('이미 등록된 진행중 프로젝트입니다.');
           if (b.slot && isPackD(b.slot)) return fail('패킹 칸 조건 불충족');
