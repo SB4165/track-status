@@ -606,6 +606,25 @@
       p.updatedAt = nowStr();
     });
   }
+  // nonconformance history of one project (compact = per 불량(소분류) chips, detail list on demand)
+  const NX = { pid: null, open: false, defect: '' };
+  function ncrBoxHTML(p) {
+    if (NX.pid !== p.id) { NX.pid = p.id; NX.open = false; NX.defect = ''; }
+    const key = ncNorm(p.projectName);
+    const rows = ncrRows().filter(r => ncNorm(r.project) === key).sort((a, b) => (Number(b.no) || 0) - (Number(a.no) || 0));
+    const open = rows.filter(r => !r.done).length;
+    const g = {}; rows.forEach(r => { const k = String(r.defect || '').trim() || '(미분류)'; (g[k] = g[k] || { n: 0, o: 0 }).n++; if (!r.done) g[k].o++; });
+    const keys = Object.keys(g).sort((a, b) => g[b].n - g[a].n || a.localeCompare(b, 'ko'));
+    if (NX.defect && !g[NX.defect]) NX.defect = '';
+    const synced = state.data.ncrSyncedAt ? ` · 동기화 ${esc(state.data.ncrSyncedAt)}` : '';
+    if (!rows.length) return `<div class="ncrbox"><div class="mh"><b>부적합 이력</b><span class="hint">등록된 부적합 없음${synced || ' · 부적합 처리현황 탭에서 동기화'}</span></div></div>`;
+    const list = rows.filter(r => !NX.defect || (String(r.defect || '').trim() || '(미분류)') === NX.defect);
+    const detail = NX.open ? `<div class="nb-list"><div class="nb-lh"><span>${NX.defect ? `<b>${esc(NX.defect)}</b> ${list.length}건` : `전체 ${list.length}건`}</span><button class="btn ghost" data-nx="tab">부적합 탭에서 보기</button></div>
+      <div class="nb-tw"><table><thead><tr><th>처리</th><th>NO</th><th>조치사항</th><th>발생일</th><th>품명 또는 위치</th><th>불량 (소분류)</th><th>불량내용</th><th>비고 / 세부 조치내용</th><th>귀책업체</th></tr></thead><tbody>${list.map(r => `<tr class="${r.done ? 'done' : ''}"><td>${r.done ? '<span class="nb-ok">처리완료</span>' : '<span class="nb-open">미처리</span>'}</td><td class="nc-no">${esc(r.no)}</td><td>${r.action ? `<span class="nc-act a-${esc(r.action)}">${esc(r.action)}</span>` : ''}</td><td>${esc(r.date)}</td><td>${esc(r.item)}</td><td>${esc(r.defect)}</td><td class="tx">${esc(r.content)}</td><td class="tx">${esc(r.note)}</td><td>${esc(r.vendor)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+    return `<div class="ncrbox"><div class="mh"><b>부적합 이력</b><span class="nb-sum">총 <b>${rows.length}</b>건 · 미처리 <b class="${open ? 'o' : ''}">${open}</b>건</span><span class="hint">${synced.replace(/^ · /, '')}</span><button class="btn" data-nx="toggle">${NX.open ? '세부 조회 닫기 ▴' : '세부 조회 ▾'}</button></div>
+      <div class="nb-chips">${keys.length > 1 ? `<button class="nb-chip ${!NX.defect ? 'on' : ''}" data-nxd="">전체 <b>${rows.length}</b></button>` : ''}${keys.map(k => `<button class="nb-chip ${NX.defect === k ? 'on' : ''}" data-nxd="${esc(k)}" title="${esc(k)} ${g[k].n}건 (미처리 ${g[k].o})">${esc(k)} <b>${g[k].n}</b>${g[k].o ? `<em>미처리 ${g[k].o}</em>` : ''}</button>`).join('')}</div>${detail}</div>`;
+  }
+  function refreshNcrBox() { const p = findProject(state.openProjectId); const box = $('#mBody .ncrbox'); if (p && box) box.outerHTML = ncrBoxHTML(p); }
   function renderProject(p, keepScroll) {
     const body = $('#mBody');
     const scroll = keepScroll ? body.scrollTop : 0;
@@ -661,6 +680,7 @@
           <div class="mh"><b>FAT 측정값</b><span class="hint">X1 · X2 직접 입력 가능 — 입력값은 각 공정의 측정값으로 함께 기록됩니다</span><button class="btn" id="saveMeas">측정값 저장</button></div>
           <div class="mgrid">${measDefs().map(dd => { const s = (p.steps || []).find(x => Number(x.stepNo) === dd.no) || {}; return `<div class="mi"><div class="mt"><span class="mn">${dd.no}</span>${esc(String(dd.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1') || dd.name)}</div>${measInputs(dd.no, s)}</div>`; }).join('')}</div>
         </div>` : ''}
+        ${ncrBoxHTML(p)}
         <div class="row-end between" style="flex-wrap:wrap">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 완료 처리">이 공정부터 진행</button></div>
           <div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>
@@ -1248,6 +1268,19 @@
   }
 
   $('#mBody').addEventListener('click', e => {
+    const nx = e.target.closest('[data-nx],[data-nxd]');
+    if (nx) {
+      e.preventDefault();
+      if (nx.dataset.nxd !== undefined) { NX.defect = nx.dataset.nxd; NX.open = true; refreshNcrBox(); return; }
+      if (nx.dataset.nx === 'toggle') { NX.open = !NX.open; refreshNcrBox(); return; }
+      if (nx.dataset.nx === 'tab') {
+        const p = findProject(state.openProjectId); if (!p) return;
+        NC.cf = { project: new Set([p.projectName]) }; if (NX.defect) NC.cf.defect = new Set([NX.defect]);
+        NC.q = ''; NC.group = ''; NC.st = 'all'; $('#nSearch').value = '';
+        closeModal(); state.tab = 'ncr'; LS.set('track.tab', 'ncr'); renderTabs(); renderNcr(); window.scrollTo(0, 0);
+        return;
+      }
+    }
     const t = e.target;
     const tog = t.closest('[data-toggle]');
     if (tog) {
