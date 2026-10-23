@@ -485,7 +485,7 @@
     const ids = list.map(p => p.id);
     [...state.psel].forEach(id => { if (!ids.includes(id)) state.psel.delete(id); });
     const allOn = ids.length > 0 && ids.every(id => state.psel.has(id));
-    const bar = state.psel.size ? `<div class="bulkbar"><span>선택 <b>${state.psel.size}</b>건</span><span class="hint">현재 공정</span><select class="in" id="bulkStep">${startOptions(Number(LS.get('track.bulkStep')) || 1)}</select><button class="btn primary" id="bulkApply">일괄 적용</button><button class="btn ghost" id="bulkClear">선택 해제</button><span class="hint">선택한 공정 이전은 완료 처리 · 17. 출하완료를 고르면 전 공정 완료 + 출하완료로 이동</span></div>` : '';
+    const bar = state.psel.size ? `<div class="bulkbar"><span>선택 <b>${state.psel.size}</b>건</span><span class="hint">현재 공정</span><select class="in" id="bulkStep">${startOptions(Number(LS.get('track.bulkStep')) || 1)}</select><button class="btn primary" id="bulkApply">일괄 적용</button><button class="btn ghost" id="bulkClear">선택 해제</button><span class="hint">선택한 공정 이전은 완료 처리 · 마지막 공정(${(state.data.stepDefs || []).length}. ${esc(((state.data.stepDefs || []).slice(-1)[0] || {}).name || '')})을 고르면 전 공정 완료 + 출하완료로 이동</span></div>` : '';
     const head = bar + '<div class="prow head"><div class="ck"><input type="checkbox" data-pall="1" ' + (allOn ? 'checked' : '') + ' aria-label="전체 선택"></div><div>배치</div><div>프로젝트명</div><div>현재 공정</div><div>진척률</div><div>이슈</div><div>최종 수정</div><div></div></div>';
     $('#pTable').innerHTML = head + list.map(p => {
       const i = projectInfo(p);
@@ -531,6 +531,25 @@
     }).join('');
   }
 
+  // FAT measurement steps (stepDefs.measure): X1/X2 values per step, same inputs in the summary box and the step panel
+  const measDefs = () => ((state.data && state.data.stepDefs) || []).filter(d => d.measure);
+  const isMeasure = (no) => measDefs().some(d => d.no === Number(no));
+  const measInputs = (no, s) => ['x1', 'x2'].map(k => `<label class="mx"><span>${k.toUpperCase()}</span><input type="text" inputmode="decimal" data-mx="${no}" data-k="${k}" value="${esc(s[k] || '')}" placeholder="값"></label>`).join('');
+  // changed measurement values in the open project window -> [{stepNo, x1, x2}]
+  function measChanges(p, onlyNo) {
+    return measDefs().filter(d => !onlyNo || d.no === onlyNo).map(d => {
+      const s = (p.steps || []).find(x => Number(x.stepNo) === d.no) || {};
+      const get = k => { const el = $(`#mBody [data-mx="${d.no}"][data-k="${k}"]`); return el ? el.value.trim() : String(s[k] || ''); };
+      return { stepNo: d.no, x1: get('x1'), x2: get('x2'), old: [String(s.x1 || ''), String(s.x2 || '')] };
+    }).filter(m => m.x1 !== m.old[0] || m.x2 !== m.old[1]).map(m => ({ stepNo: m.stepNo, x1: m.x1, x2: m.x2 }));
+  }
+  function saveMeas(pid, items, msg) {
+    return mutate({ action: 'saveMeasure', projectId: pid, items }, msg, (d, user) => {
+      const p = byId(d, pid); if (!p) return;
+      items.forEach(it => { const s = p.steps.find(x => Number(x.stepNo) === it.stepNo); if (s) Object.assign(s, { x1: it.x1, x2: it.x2 }); });
+      p.updatedAt = nowStr();
+    });
+  }
   function renderProject(p, keepScroll) {
     const body = $('#mBody');
     const scroll = keepScroll ? body.scrollTop : 0;
@@ -563,6 +582,7 @@
             <label class="f">완료일<input type="date" name="endDate" value="${esc(s.endDate)}"></label>
             <label class="f">담당자<input type="text" name="owner" value="${esc(s.owner)}" placeholder="이름"></label>
           </div>
+          ${isMeasure(no) ? `<div class="meas-row"><span class="hint">측정값</span>${measInputs(no, s)}</div>` : ''}
           <label class="f">세부 진행사항<textarea name="progress" rows="3" placeholder="진행 내용을 입력하세요">${esc(s.progress)}</textarea></label>
           <label class="f">이슈사항<textarea name="issue" rows="2" placeholder="이슈가 있으면 입력하세요">${esc(s.issue)}</textarea></label>
           ${isFile ? `<div class="filecheck"><span>NAS 폴더 파일 업로드 확인 <b>자동화 예정</b></span><span class="meta">${s.fileCheckedAt ? '확인 ' + esc(s.fileCheckedAt) + ' · ' + esc(s.fileCount) + '개' : '미연동'}</span></div>` : ''}
@@ -581,6 +601,10 @@
           <label class="f"><span>진행사항 요약 <span class="autotag ${i.manualProg ? 'man' : ''}">${i.manualProg ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumProg" rows="3" data-auto="${esc(i.autoProg)}">${esc(i.prog)}</textarea></label>
           <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumIssue" rows="3" placeholder="이슈 없음" data-auto="${esc(i.autoIssue)}">${esc(i.issue)}</textarea></label>
         </div>
+        ${measDefs().length ? `<div class="measbox">
+          <div class="mh"><b>FAT 측정값</b><span class="hint">X1 · X2 직접 입력 가능 — 입력값은 각 공정의 측정값으로 함께 기록됩니다</span><button class="btn" id="saveMeas">측정값 저장</button></div>
+          <div class="mgrid">${measDefs().map(dd => { const s = (p.steps || []).find(x => Number(x.stepNo) === dd.no) || {}; return `<div class="mi"><div class="mt"><span class="mn">${dd.no}</span>${esc(String(dd.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1') || dd.name)}</div>${measInputs(dd.no, s)}</div>`; }).join('')}</div>
+        </div>` : ''}
         <div class="row-end between" style="flex-wrap:wrap">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 완료 처리">이 공정부터 진행</button></div>
           <div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>
@@ -1053,6 +1077,7 @@
         x.updatedAt = nowStr();
       }));
     });
+    const mi = measChanges(p); if (mi.length) jobs.push(() => saveMeas(pid, mi, null));
     if (!jobs.length) { toast('변경 사항이 없습니다'); return; }
     jobs.forEach(j => j());
     toast(`저장되었습니다 (${jobs.length}건)`);
@@ -1082,15 +1107,18 @@
       const on = el.querySelector('.seg-ctl button.on');
       const f = { status: on ? on.dataset.v : '대기', startDate: v('startDate'), endDate: v('endDate'), owner: v('owner'), progress: v('progress'), issue: v('issue') };
       const pid = state.openProjectId;
+      const mi = isMeasure(no) ? measChanges(findProject(pid), no) : [];
       mutate(Object.assign({ action: 'saveStep', projectId: pid, stepNo: no }, f), '저장되었습니다', (d, user) => {
         const p = byId(d, pid); if (!p) return;
         const s = p.steps.find(x => Number(x.stepNo) === no); Object.assign(s, f, { updatedAt: nowStr(), updatedBy: user });
         p.updatedAt = nowStr();
       });
+      if (mi.length) saveMeas(pid, mi, null);
       return;
     }
     const id = t.closest('button') && t.closest('button').id;
     const pid = state.openProjectId;
+    if (id === 'saveMeas') { const mi = measChanges(findProject(pid)); if (!mi.length) toast('변경된 측정값이 없습니다'); else saveMeas(pid, mi, '측정값이 저장되었습니다'); return; }
     if (id === 'autoSum') {
       mutate({ action: 'saveSummary', projectId: pid, summaryProgress: '', summaryIssue: '' }, '자동 초안으로 바꿨습니다', d => {
         const p = byId(d, pid); if (p) { p.summaryProgress = ''; p.summaryIssue = ''; }
@@ -1125,6 +1153,11 @@
       });
     }
   });
+  // the same measurement shows in two places (summary box + step panel): keep them in sync while typing
+  $('#mBody').addEventListener('input', e => {
+    const t = e.target; if (!t.dataset || !t.dataset.mx) return;
+    $$(`#mBody [data-mx="${t.dataset.mx}"][data-k="${t.dataset.k}"]`).forEach(x => { if (x !== t) x.value = t.value; });
+  });
   $('#mBody').addEventListener('change', e => {
     if (e.target.id === 'mSlotSel') setSlot(findProject(state.openProjectId), e.target.value);
   });
@@ -1146,7 +1179,7 @@
 
   // ===================== Demo backend =====================
   const Demo = (() => {
-    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '클리닝(제조)', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)', '출하완료'];
+    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '클리닝(제조)', '패킹리스트 확인', '출하사진 촬영', '패킹 서류 스캔 및 인쇄', '패킹(서류 동봉)', '출하'];
     const FILE = [4, 5, 6, 7, 8, 9, 10, 14, 15];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
@@ -1176,7 +1209,7 @@
       mk('P7', null, names[6], 0), mk('P8', null, names[7], 2),
       Object.assign(mk('P9', null, names[8], 14), { state: 'shipped' }),
     ];
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1) })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));
@@ -1231,6 +1264,7 @@
           ['status', 'startDate', 'endDate', 'owner', 'progress', 'issue'].forEach(k => (s[k] = b[k])); s.updatedAt = now(); s.updatedBy = b.user;
           log(b, '공정 저장', p, s);
         }
+        if (b.action === 'saveMeasure' && p) { (b.items || []).forEach(it => { const s = p.steps.find(x => x.stepNo === Number(it.stepNo)); if (s) { s.x1 = it.x1; s.x2 = it.x2; } }); log(b, 'measure', p, null, JSON.stringify(b.items)); }
         if (b.action === 'saveSummary' && p) { p.summaryProgress = b.summaryProgress; p.summaryIssue = b.summaryIssue; log(b, '요약 저장', p); }
         if (b.action === 'release' && p) { p.state = b.state; p.slot = null; log(b, b.state === 'shipped' ? '출하 완료' : '삭제', p); }
         if (b.action === 'restore' && p) { p.state = 'active'; log(b, '복원', p); }

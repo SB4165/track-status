@@ -19,9 +19,9 @@ const STEPS = [
   { no: 1,  name: 'QC검수',                 file: false },
   { no: 2,  name: 'QC검수 조치확인',         file: false },
   { no: 3,  name: 'FAT 셋업',               file: false },
-  { no: 4,  name: 'FAT 측정(진동)',          file: true },
-  { no: 5,  name: 'FAT 측정(반복정밀도)',    file: true },
-  { no: 6,  name: 'FAT 측정(AWC)',           file: true },
+  { no: 4,  name: 'FAT 측정(진동)',          file: true, measure: true },
+  { no: 5,  name: 'FAT 측정(반복정밀도)',    file: true, measure: true },
+  { no: 6,  name: 'FAT 측정(AWC)',           file: true, measure: true },
   { no: 7,  name: '반복Cycle 촬영',          file: true },
   { no: 8,  name: 'Full Cycle 촬영',         file: true },
   { no: 9,  name: 'X1/X2 핸드레벨 촬영',     file: true },
@@ -32,12 +32,12 @@ const STEPS = [
   { no: 14, name: '출하사진 촬영',           file: true },
   { no: 15, name: '패킹 서류 스캔 및 인쇄',  file: true },
   { no: 16, name: '패킹(서류 동봉)',         file: false },
-  { no: 17, name: '출하완료',               file: false },
+  { no: 17, name: '출하',                   file: false },
 ];
 // STEPS_VERSION history (existing Steps rows migrate automatically, Steps sheet backed up first)
 //  v2: inserted 11 (로봇 배선 해체), added 출하완료 at the end
 //  v3: inserted 12 (클리닝)
-const STEPS_VERSION = '3';
+const STEPS_VERSION = '4'; // v4: step 17 renamed 출하완료 -> 출하 (names refreshed by migration)
 
 // Floor plan on a 1000-wide canvas (height = lowest item + margin) (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
@@ -76,6 +76,7 @@ const SHEETS = {
   Projects: ['id', 'slot', 'projectName', 'state', 'summaryProgress', 'summaryIssue', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'],
   Steps:    ['projectId', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'fileRequired', 'fileCount', 'fileCheckedAt', 'updatedAt', 'updatedBy'],
   Notes:    ['id', 'content', 'updatedAt', 'updatedBy', 'style'],
+  Measures: ['projectId', 'stepNo', 'x1', 'x2', 'updatedAt', 'updatedBy'],
   History:  ['at', 'by', 'action', 'projectId', 'projectName', 'slot', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'detail'],
   SyncState: ['name', 'state', 'at', 'by'],
 };
@@ -83,7 +84,7 @@ const SHEETS = {
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -171,6 +172,7 @@ function doPost(e) {
       case 'createProject': result = createProject_(body); break;
       case 'setSlot':       result = setSlot_(body); break;
       case 'saveStep':      result = saveStep_(body); break;
+      case 'saveMeasure':   result = saveMeasure_(body); break;
       case 'saveSummary':   result = saveSummary_(body); break;
       case 'release':       result = release_(body); break;
       case 'restore':       result = restore_(body); break;
@@ -276,7 +278,13 @@ function bootstrap_() {
   }));
   const projects = readTable_('Projects').filter(p => p.state === 'active' || p.state === 'shipped');
   const byProj = {};
-  readTable_('Steps').forEach(s => { (byProj[s.projectId] = byProj[s.projectId] || []).push(s); });
+  const meas = {};
+  if (getDb_().getSheetByName('Measures')) readTable_('Measures').forEach(m => { meas[m.projectId + '|' + Number(m.stepNo)] = m; });
+  readTable_('Steps').forEach(s => {
+    const m = meas[s.projectId + '|' + Number(s.stepNo)];
+    if (m) { s.x1 = String(m.x1 === undefined ? '' : m.x1); s.x2 = String(m.x2 === undefined ? '' : m.x2); }
+    (byProj[s.projectId] = byProj[s.projectId] || []).push(s);
+  });
   projects.forEach(p => {
     p.slot = p.slot === '' ? null : Number(p.slot);
     p.steps = (byProj[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => {
@@ -443,6 +451,34 @@ function saveStep_(b) {
   return bootstrap_();
 }
 
+// FAT measurement values (X1/X2) per project step — Measures sheet (created on first save)
+function saveMeasure_(b) {
+  const items = Array.isArray(b.items) ? b.items : [];
+  if (!b.projectId || !items.length) throw new Error('측정값이 없습니다.');
+  const ss = getDb_();
+  let sh = ss.getSheetByName('Measures');
+  if (!sh) {
+    sh = ss.insertSheet('Measures');
+    sh.getRange(1, 1, 1, SHEETS.Measures.length).setValues([SHEETS.Measures]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  const t = now_();
+  const prow = projectRow_(b.projectId);
+  const proj = rowObj_('Projects', prow);
+  const det = [];
+  items.forEach(it => {
+    const no = Number(it.stepNo); const def = STEPS[no - 1];
+    if (!def || !def.measure) return;
+    const vals = [String(b.projectId), String(no), String(it.x1 == null ? '' : it.x1).trim(), String(it.x2 == null ? '' : it.x2).trim(), t, b.user || ''];
+    const row = findRow_(sh, r => String(r[0]) === String(b.projectId) && Number(r[1]) === no);
+    if (row < 0) appendText_(sh, vals); else sh.getRange(row, 1, 1, vals.length).setNumberFormat('@').setValues([vals]);
+    det.push(no + '. ' + def.name + ' X1=' + (vals[2] || '-') + ', X2=' + (vals[3] || '-'));
+  });
+  touchProject_(prow, b.user);
+  history_(b.user, 'measure', proj, null, det.join(' / '));
+  return bootstrap_();
+}
+
 function saveSummary_(b) {
   const ps = getDb_().getSheetByName('Projects');
   const row = projectRow_(b.projectId);
@@ -490,7 +526,7 @@ function saveNote_(b) {
 // steps before stepNo: not completed -> 완료 (work done, records just not entered) ; steps from stepNo: 생략 -> 대기
 // a step counts as done when it is before the start step; starting at the last step (출하완료) means everything is done
 function startDone_(no, start) { return no < start || start >= STEPS.length; }
-function skipDetail_(n) { return n >= STEPS.length ? n + '. ' + STEPS[STEPS.length - 1].name + ' (전 공정 완료 처리)' : n + '번 공정부터 진행 (이전 공정 완료 처리)'; }
+function skipDetail_(n) { return n >= STEPS.length ? n + '. ' + STEPS[STEPS.length - 1].name + ' (전 공정 완료 처리, 출하완료로 이동)' : n + '번 공정부터 진행 (이전 공정 완료 처리)'; }
 function applySkip_(st, vals, pid, n) {
   const si = SHEETS.Steps.indexOf('status');
   for (let i = 1; i < vals.length; i++) {
@@ -678,7 +714,7 @@ function migrateLayout_(stamp) {
   history_('system', 'layout', null, null, '배치도 변경 (LAYOUT_VERSION ' + LAYOUT_VERSION + ', 백업 시트 생성)');
 }
 
-// step-list migration by row count: 14 (v1) -> 16 (v2) -> 17 (v3)
+// step-list migration by row count: 14 (v1) -> 16 (v2) -> 17 (v3); every run also refreshes step names/file flags (v4 rename)
 function migrateSteps_(stamp) {
   const ss = getDb_();
   const sh = ss.getSheetByName('Steps');
@@ -724,5 +760,5 @@ function migrateSteps_(stamp) {
   });
   sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), h.length).clearContent();
   sh.getRange(2, 1, out.length, h.length).setNumberFormat('@').setValues(out);
-  history_('system', 'steps', null, null, '공정 목록 변경 (STEPS_VERSION ' + STEPS_VERSION + ': 12. 클리닝(제조) 추가 등, 백업 시트 생성)');
+  history_('system', 'steps', null, null, '공정 목록 갱신 (STEPS_VERSION ' + STEPS_VERSION + ', 백업 시트 생성)');
 }

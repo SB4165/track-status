@@ -523,3 +523,20 @@ input.sy-in, .sy-in { width: auto; height: 34px; border: 1px solid var(--line-st
 .proc-side li em { flex: none; font-style: normal; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
 .proc-side .ps-f { margin-top: 8px; font-size: 10.5px; color: var(--text-3); line-height: 1.5; }
 .proc-side .ps-f em { font-style: normal; background: var(--accent); color: #fff; border-radius: 6px; padding: 0 4px; font-weight: 800; }
+
+/* FAT measurements (X1/X2) */
+.measbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 10px 12px; }
+.measbox .mh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.measbox .mh b { font-size: 13.5px; }
+.measbox .mh .hint { flex: 1; min-width: 160px; font-size: 12px; }
+.measbox .mh .btn { height: 32px; }
+.mgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.mi { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface-2); display: grid; gap: 6px; }
+.mi .mt { font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.mi .mn { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--text); color: var(--surface); }
+.mx { display: flex; align-items: center; gap: 6px; }
+.mx span { flex: none; width: 22px; font-size: 12px; font-weight: 800; color: var(--accent); }
+.mx input { flex: 1; min-width: 0; padding: 6px 8px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.meas-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--line-strong); border-radius: 10px; }
+.meas-row .mx { flex: 1; min-width: 130px; }
+@media (max-width: 640px) { .mgrid { grid-template-columns: 1fr; } }
