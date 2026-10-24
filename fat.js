@@ -181,7 +181,7 @@
     $('#fatSum').innerHTML = `
       <div class="fs-row">${card('Average Vector', f6(r.avg))}${card('Min Vector', f6(r.vmin))}${card('Max Vector', f6(r.vmax))}${card('P-P Diameter', f6(r.pp), 'key')}${card('OUT Count', r.outs.length, r.outs.length ? 'bad' : 'ok')}</div>
       <div class="fs-grid">
-        <table class="fs-t"><thead><tr><th></th><th>MAX</th><th>MIN</th><th>P-P</th></tr></thead><tbody>
+        <table class="fs-t fs-rep"><thead><tr><th class="cap">Repeatability</th><th>MAX</th><th>MIN</th><th>P-P</th></tr></thead><tbody>
           <tr><th>X</th><td>${f2(r.xmax)}</td><td>${f2(r.xmin)}</td><td>${f6(r.xpp)}</td></tr>
           <tr><th>Y</th><td>${f2(r.ymax)}</td><td>${f2(r.ymin)}</td><td>${f6(r.ypp)}</td></tr></tbody></table>
         <table class="fs-t"><tbody><tr><th>기준원 중심 X</th><td>${f6(r.cx)}</td></tr><tr><th>기준원 중심 Y</th><td>${f6(r.cy)}</td></tr><tr><th>반경</th><td>${esc(r.radius)} um</td></tr></tbody></table>
@@ -378,7 +378,7 @@
         ['XY Repeatability 결과', baseName()], [],
         ['프로젝트', TI.proj], ['핸드', TI.hand], ['테스트', (TESTS.find(t => t[0] === TI.test) || [])[1] || ''], ['테스트 번호', 'Test' + String(TI.no).trim()], ['테스트 날짜', TI.date], ['로그 파일', S.name || '(붙여넣기)'], [],
         ['Average Vector', R6(r.avg)], ['Min Vector', R6(r.vmin)], ['Max Vector', R6(r.vmax)], ['P-P Diameter', R6(r.pp)], [],
-        ['', 'MAX', 'MIN', 'P-P'], ['X', r.xmax, r.xmin, R6(r.xpp)], ['Y', r.ymax, r.ymin, R6(r.ypp)], [],
+        ['Repeatability', 'MAX', 'MIN', 'P-P'], ['X', r.xmax, r.xmin, R6(r.xpp)], ['Y', r.ymax, r.ymin, R6(r.ypp)], [],
         ['기준원 중심 X', R6(r.cx)], ['기준원 중심 Y', R6(r.cy)], ['반경 (um)', r.radius], ['OUT Count', r.outs.length], [],
         ['TargetArear', S.meta ? S.meta.target : ''], ['Resolution', S.meta ? S.meta.resolution : ''], ['Data Start Row (마지막 FirstPoint)', S.meta ? S.meta.startLine : ''], ['RAW Points', S.meta ? S.meta.points.length : ''], ['Used Points', S.pts.length], [],
         ['TEST CONDITION'], ...COND.map(([k, l, d, u]) => [l, `${S.cond[k] ?? d} ${u}`]), [],

@@ -827,3 +827,4 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .fi-name span { color: var(--text-3); }
 .fi-name b { font-weight: 800; color: var(--text); }
 .fi-name .fi-wait { color: #b45309; }
+.fs-t.fs-rep thead th.cap { text-align: left; color: var(--accent); font-weight: 800; }
