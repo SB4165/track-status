@@ -828,3 +828,8 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .fi-name b { font-weight: 800; color: var(--text); }
 .fi-name .fi-wait { color: #b45309; }
 .fs-t.fs-rep thead th.cap { text-align: left; color: var(--accent); font-weight: 800; }
+
+/* modal textareas grow with content (keeps the rows= height as minimum) */
+#mBody textarea { field-sizing: content; max-height: 60vh; overflow-y: auto; }
+#mBody textarea[rows="2"] { min-height: calc(2lh + 18px); }
+#mBody textarea[rows="3"] { min-height: calc(3lh + 18px); }

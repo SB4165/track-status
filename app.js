@@ -1310,6 +1310,11 @@
     toast(`저장되었습니다 (${jobs.length}건)`);
   }
 
+  // textareas grow with their text (CSS field-sizing where supported; JS fallback for older browsers)
+  const FS_OK = window.CSS && CSS.supports && CSS.supports('field-sizing', 'content');
+  const autoGrow = (ta) => { if (FS_OK || !ta || !ta.offsetParent) return; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, Math.round(window.innerHeight * 0.6)) + 'px'; };
+  $('#mBody').addEventListener('input', e => { if (e.target.tagName === 'TEXTAREA') autoGrow(e.target); });
+  $('#mBody').addEventListener('focusin', e => { if (e.target.tagName === 'TEXTAREA') autoGrow(e.target); });
   $('#mBody').addEventListener('click', e => {
     const so = e.target.closest('.stl-r[data-open]');
     if (so) { const p = findProject(so.dataset.open); if (p) { state.openStep = null; renderProject(p, false); $('#mBody').scrollTop = 0; } return; }
