@@ -6,7 +6,7 @@
   <title>트랙 진행현황</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=38">
+  <link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +18,7 @@
         <button class="tab on" role="tab" data-tab="board">진행현황</button>
         <button class="tab" role="tab" data-tab="projects">프로젝트 관리 <span class="cnt" id="projCnt"></span></button>
         <button class="tab" role="tab" data-tab="sync">프로젝트 동기화 <span class="badge" id="syncCnt"></span></button>
+        <button class="tab" role="tab" data-tab="fat">FAT 테스트</button>
         <button class="tab" role="tab" data-tab="ncr">부적합 처리현황 <span class="badge" id="ncrCnt" title="미처리 건수"></span></button>
       </nav>
       <div class="actions">
@@ -110,6 +111,9 @@
         <div class="sy-foot">· 참조 시트(BACKLOG STATUS › SYSTEM)의 TYPE에 TRACK이 포함된 PROJECT NO.만 표시 · 출하일 = Factory Out Date (공란은 미정) · 열 위치가 바뀌어도 헤더 이름으로 자동 추적 · 동기화 = 프로젝트 관리 탭에 등록 (시작 공정·배치 지정 가능) · 동기화 취소 = 프로젝트 관리 탭에서 삭제 · 동기화·취소·제외는 비밀번호 필요 (창을 닫을 때까지 유지) · 10분마다 자동 새로고침</div>
       </div>
     </section>
+    <!-- FAT test view (built by fat.js; log stays in the browser) -->
+    <section id="viewFat" class="view" hidden></section>
+
     <!-- Nonconformance view -->
     <section id="viewNcr" class="view" hidden>
       <div class="toolbar">
@@ -153,7 +157,8 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="config.js?v=38"></script>
-  <script src="app.js?v=38"></script>
+  <script src="config.js?v=39"></script>
+  <script src="fat.js?v=39"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>

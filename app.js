@@ -24,7 +24,7 @@
   const state = {
     data: null,
     names: (() => { try { return JSON.parse(LS.get('track.names') || 'null'); } catch (_) { return null; } })(),
-    tab: ['projects', 'sync', 'ncr'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
+    tab: ['projects', 'sync', 'ncr', 'fat'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
     filter: 'active', q: '', group: '',
     openProjectId: null, openStep: null,
     pending: 0, queue: Promise.resolve(), idMap: {}, psel: new Set(),
@@ -277,6 +277,8 @@
     $('#viewProjects').hidden = state.tab !== 'projects';
     $('#viewSync').hidden = state.tab !== 'sync';
     $('#viewNcr').hidden = state.tab !== 'ncr';
+    $('#viewFat').hidden = state.tab !== 'fat';
+    if (state.tab === 'fat' && window.FatTab) window.FatTab.show();
     fitPlan();
   }
   // canvas is 1000 wide; height follows the layout (lowest item + margin)

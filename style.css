@@ -658,3 +658,79 @@ th.flt .nc-th, th.flt .nc-th i { color: var(--accent); opacity: 1; }
 .proc-side li.par-s em { position: absolute; right: 6px; top: 50%; transform: translateY(calc(-50% + 13px)); }
 .proc-side.compact li.par-s { padding-right: 24px; }
 .proc-side.compact li.par-s em { right: 4px; transform: translateY(calc(-50% + 11px)); }
+
+/* ===== FAT 테스트 ===== */
+#viewFat { display: grid; gap: 12px; }
+#viewFat[hidden] { display: none; }
+.fat-grid { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.fat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; min-width: 0; }
+.fat-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.fat-h h3 { margin: 0; font-size: 15px; margin-right: auto; }
+.fat-h .btn { height: 32px; font-size: 12.5px; }
+.fat-chart .fat-h h3 { margin-right: 0; }
+.fat-name { margin-right: auto; font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
+.fat-file { cursor: pointer; }
+.fat-ta { width: 100%; box-sizing: border-box; height: 200px; resize: vertical; border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2); color: var(--text); white-space: pre; }
+.fat-ta:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.fat-meta { display: grid; grid-template-columns: 1fr; gap: 4px; margin-top: 10px; }
+.fat-meta > div { display: flex; justify-content: space-between; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+.fat-meta span { color: var(--text-2); }
+.fat-meta b { font-variant-numeric: tabular-nums; }
+.fat-meta .fat-bad { grid-column: 1 / -1; color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.fat-sub { font-size: 12px; font-weight: 800; color: var(--text-2); letter-spacing: .02em; margin-bottom: 6px; }
+.fat-cond { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.fat-cg { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.fat-cg label { display: grid; grid-template-columns: 96px minmax(0, 1fr) 48px; align-items: center; gap: 6px; font-size: 12.5px; }
+.fat-cg label span { color: var(--text-2); font-weight: 600; }
+.fat-cg label em { font-style: normal; color: var(--text-3); font-size: 11.5px; }
+.fat-cg .in { height: 30px; padding: 0 8px; text-align: right; min-width: 0; }
+.fat-cv { position: relative; min-height: 320px; }
+.fat-cv canvas { display: block; width: 100%; }
+.fat-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; border: 1px dashed var(--line-strong); border-radius: 10px; }
+.fat-lg { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 6px; }
+.fat-lg span { display: inline-flex; align-items: center; gap: 6px; }
+.fat-lg .d { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.fat-lg .d.b { background: #2f6bff; } .fat-lg .d.r { background: #e5484d; }
+.fat-lg .l { width: 18px; height: 0; border-top: 2px solid #16a34a; display: inline-block; }
+.fs-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.fs { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.fs span { display: block; font-size: 12px; color: var(--text-2); font-weight: 600; }
+.fs b { display: block; font-size: 20px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fs.key { background: var(--accent-soft); } .fs.key b { color: var(--accent); }
+.fs.bad b { color: var(--danger); } .fs.ok b { color: #16a34a; }
+.fs-grid { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 12px; margin-top: 12px; align-items: start; }
+.fs-t { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fs-t th, .fs-t td { padding: 5px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.fs-t th { color: var(--text-2); font-weight: 700; text-align: left; }
+.fs-t thead th { text-align: right; background: var(--surface-2); }
+.fs-out { min-width: 0; overflow: auto; max-height: 220px; }
+.fs-out .fs-t { width: 100%; }
+.fat-none { color: var(--text-3); font-size: 13px; }
+.fat-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.fat-sp { flex: 1; }
+.btn.danger-o { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.fat-warn { font-size: 12px; color: #9a5b00; background: #fff7e6; border: 1px solid #fde3b0; border-radius: 8px; padding: 7px 10px; margin-bottom: 10px; }
+.fat-tbl { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.fat-th, .fat-tbl .fr { display: grid; grid-template-columns: 40px 70px repeat(5, minmax(0, 1fr)) 70px; align-items: center; }
+.fat-th { background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.fat-th .c.s { all: unset; cursor: pointer; padding: 8px 10px; font-size: 12px; font-weight: 700; color: var(--text-2); text-align: right; }
+.fat-th .c.s:hover { color: var(--text); }
+.fat-tbl .c { padding: 0 10px; font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fat-tbl .c.ck { text-align: center; padding: 0; }
+.fat-vp { position: relative; height: 420px; overflow: auto; }
+.fat-sz { width: 1px; }
+.fat-rows { position: absolute; top: 0; left: 0; right: 0; }
+.fat-tbl .fr { height: 30px; border-bottom: 1px solid var(--line); }
+.fat-tbl .fr.o { background: color-mix(in srgb, var(--danger) 7%, transparent); }
+.fat-tbl .fr.on { background: var(--accent-soft); }
+.fat-tbl .rb, .fat-tbl .rg { font-size: 11px; font-weight: 800; border-radius: 6px; padding: 1px 7px; }
+.fat-tbl .rb { color: #fff; background: #e5484d; } .fat-tbl .rg { color: #157347; background: #e3f6ec; }
+@media (prefers-color-scheme: dark) { .fat-warn { background: #3a2a12; border-color: #6b4a1a; color: #fbbf6a; } .fat-tbl .rg { background: #12301f; color: #6ee7a0; } }
+@media (max-width: 1080px) { .fat-grid { grid-template-columns: 1fr; } .fs-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fs-grid { grid-template-columns: 1fr 1fr; } .fs-out { grid-column: 1 / -1; } }
+@media (max-width: 640px) {
+  .fs-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fs-grid { grid-template-columns: 1fr; }
+  .fat-meta, .fat-cg { grid-template-columns: 1fr; }
+  .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .fat-tbl { overflow-x: auto; } .fat-th, .fat-tbl .fr, .fat-vp { min-width: 620px; }
+  .fat-card { padding: 12px; }
+}
