@@ -795,3 +795,17 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
   .fat-grid { grid-template-columns: 1fr; grid-template-areas: "in" "ch" "rs" "tb"; }
   .fat-res .fs-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fat-res .fs-grid { grid-template-columns: 1fr; }
 }
+
+/* FAT chart ↔ table link */
+.fat-lg .d.s { background: transparent; border: 2px solid #f59e0b; width: 7px; height: 7px; }
+.fat-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; padding: 6px 10px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fat-pick[hidden] { display: none; }
+.fat-pick b { font-weight: 800; }
+.fat-pick span { color: var(--text-2); }
+.fat-pick .rb, .fat-pick .rg { font-size: 11px; font-weight: 800; border-radius: 6px; padding: 1px 7px; }
+.fat-pick .rb { color: #fff; background: #e5484d; } .fat-pick .rg { color: #157347; background: #e3f6ec; }
+.fat-pick .fp-x { margin-left: auto; border: 0; background: none; color: var(--text-3); cursor: pointer; font-size: 13px; }
+.fat-tbl .fr { cursor: pointer; }
+.fat-tbl .fr:hover { background: var(--surface-2); }
+.fat-tbl .fr.fx { background: #fff4d6; box-shadow: inset 3px 0 0 #f59e0b; }
+@media (prefers-color-scheme: dark) { .fat-tbl .fr.fx { background: #3a2a12; } }

@@ -110,8 +110,9 @@
         <section class="fat-card fat-chart">
           <div class="fat-h"><h3>XY Repeatability</h3><span class="fat-name" id="fatName"></span>
             <label class="fat-chk fat-ax" title="엑셀 결과값 시트와 같은 축 범위(0 포함)로 보기"><input type="checkbox" id="fatExcelAx" ${S.excelAxis ? 'checked' : ''}> 엑셀 축</label><button class="btn" id="fatPng" disabled>그래프 PNG</button><button class="btn" id="fatXlsx" disabled>엑셀</button></div>
-          <div class="fat-cv"><canvas id="fatCanvas" aria-label="XY Repeatability 산점도"></canvas><div class="fat-empty" id="fatEmpty">로그를 붙여넣으면 그래프가 표시됩니다</div></div>
-          <div class="fat-lg"><span><i class="d b"></i>Measured</span><span><i class="l"></i>Reference circle</span><span><i class="d r"></i>Outside circle</span></div>
+          <div class="fat-cv"><canvas id="fatCanvas" aria-label="XY Repeatability 산점도 — 점을 누르면 Index 표시"></canvas><div class="fat-empty" id="fatEmpty">로그를 붙여넣으면 그래프가 표시됩니다</div></div>
+          <div class="fat-pick" id="fatPick" hidden></div>
+          <div class="fat-lg"><span><i class="d b"></i>Measured</span><span><i class="l"></i>Reference circle</span><span><i class="d r"></i>Outside circle</span><span><i class="d s"></i>선택(체크)</span></div>
         </section>
         <section class="fat-card fat-res"><div class="fat-h"><h3>결과</h3></div><div class="fat-sum" id="fatSum"></div></section>
       <section class="fat-card fat-meas">
@@ -138,12 +139,12 @@
     S.pts = S.orig.slice(); S.undo = []; S.sel.clear();
     recalc();
   }
-  function recalc() { S.res = S.pts.length ? compute(S.pts, S.radius) : null; S.sel.forEach(i => { if (i > S.pts.length) S.sel.delete(i); }); renderAll(); }
+  function recalc() { S.res = S.pts.length ? compute(S.pts, S.radius) : null; if (S.focus && S.focus > S.pts.length) S.focus = null; S.sel.forEach(i => { if (i > S.pts.length) S.sel.delete(i); }); renderAll(); }
   function mutatePts(keepIdx, msg) { // keepIdx: Set of 1-based indexes to remove
     if (!keepIdx.size) return;
     S.undo.push(S.pts); if (S.undo.length > 50) S.undo.shift();
     S.pts = S.pts.filter((p, i) => !keepIdx.has(i + 1));
-    S.sel.clear(); recalc(); toast(msg);
+    S.sel.clear(); S.focus = null; recalc(); toast(msg);
   }
 
   // ---------- render ----------
@@ -218,8 +219,24 @@
     r.circle.forEach(([x, y], i) => (i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y)))); ctx.stroke();
     ctx.fillStyle = '#e5484d'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
     for (const p of r.outs) { ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), dot + 1.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    // checked rows (table) → orange rings
+    if (opt.sel && opt.sel.size) {
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2.2;
+      for (const p of r.rows) if (opt.sel.has(p.idx)) { ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), dot + 4, 0, Math.PI * 2); ctx.stroke(); }
+    }
     ctx.restore();
-    return { ox, oy, side };
+    // focused point (row click / chart click) → crosshair ring + index label
+    const f = opt.focus ? r.rows[opt.focus - 1] : null;
+    if (f) {
+      const X = sx(f.x), Y = sy(f.y);
+      ctx.strokeStyle = fg; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, Y, dot + 6, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = fg2; ctx.globalAlpha = .5; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(ox, Y); ctx.lineTo(ox + side, Y); ctx.moveTo(X, oy); ctx.lineTo(X, oy + side); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      const t = `#${f.idx}`; ctx.font = `800 12px ${font}`; const tw = ctx.measureText(t).width + 12;
+      let lx = X + dot + 8, ly = Y - 22; if (lx + tw > ox + side) lx = X - dot - 8 - tw; if (ly < oy) ly = Y + 8;
+      ctx.fillStyle = f.out ? '#e5484d' : '#2f6bff'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(lx, ly, tw, 18, 5); else ctx.rect(lx, ly, tw, 18); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(t, lx + 6, ly + 13);
+    }
+    return { ox, oy, side, sx, sy };
   }
   function drawChart() {
     const cv = $('#fatCanvas'); if (!cv) return;
@@ -229,7 +246,30 @@
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px';
     const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
     $('#fatEmpty').hidden = !!S.res;
-    if (S.res) drawTo(ctx, w, h, S.res, { excel: S.excelAxis });
+    S.view = S.res ? drawTo(ctx, w, h, S.res, { excel: S.excelAxis, sel: S.sel, focus: S.focus }) : null;
+    renderPick();
+  }
+  // chart ↔ table link
+  function renderPick() {
+    const el = $('#fatPick'); if (!el) return;
+    const f = S.res && S.focus ? S.res.rows[S.focus - 1] : null;
+    el.hidden = !f;
+    if (f) el.innerHTML = `<b>선택한 점 · Index ${f.idx}</b><span>X ${f2(f.x)}</span><span>Y ${f2(f.y)}</span><span>Center dist ${f6(f.cdist)}</span><span class="${f.out ? 'rb' : 'rg'}">${f.out ? 'OUT' : 'OK'}</span><button type="button" class="fp-x" aria-label="선택 해제">✕</button>`;
+  }
+  function nearest(ev) {
+    if (!S.view || !S.res) return null;
+    const rc = $('#fatCanvas').getBoundingClientRect(); const mx = ev.clientX - rc.left, my = ev.clientY - rc.top;
+    let best = null, bd = 12 * 12;
+    for (const p of S.res.rows) { const dx = S.view.sx(p.x) - mx, dy = S.view.sy(p.y) - my, d = dx * dx + dy * dy; if (d <= bd) { bd = d; best = p; } }
+    return best;
+  }
+  function focusPoint(idx, scroll) {
+    S.focus = idx || null; drawChart();
+    if (!idx) { paintRows(); return; }
+    let pos = viewRows.findIndex(x => x.idx === idx);
+    if (pos < 0 && S.outOnly) { S.outOnly = false; $('#fatOutOnly').checked = false; renderTable(); pos = viewRows.findIndex(x => x.idx === idx); }
+    if (scroll && pos >= 0) { const vp = $('#fatVp'); vp.scrollTop = Math.max(0, pos * RH - vp.clientHeight / 2 + RH / 2); }
+    paintRows();
   }
 
   // ---------- virtual table ----------
@@ -252,7 +292,7 @@
     const vp = $('#fatVp'); const top = vp.scrollTop; const h = vp.clientHeight || 420;
     const a = Math.max(0, Math.floor(top / RH) - 10), b = Math.min(viewRows.length, Math.ceil((top + h) / RH) + 10);
     const box = $('#fatRows'); box.style.transform = `translateY(${a * RH}px)`;
-    box.innerHTML = viewRows.slice(a, b).map(x => `<div class="fr ${x.out ? 'o' : ''} ${S.sel.has(x.idx) ? 'on' : ''}"><div class="c ck"><input type="checkbox" data-i="${x.idx}" ${S.sel.has(x.idx) ? 'checked' : ''}></div><div class="c">${x.idx}</div><div class="c">${f2(x.x)}</div><div class="c">${f2(x.y)}</div><div class="c">${f6(x.vec)}</div><div class="c">${f6(x.maxd)}</div><div class="c">${f6(x.cdist)}</div><div class="c"><span class="${x.out ? 'rb' : 'rg'}">${x.out ? 'OUT' : 'OK'}</span></div></div>`).join('');
+    box.innerHTML = viewRows.slice(a, b).map(x => `<div class="fr ${x.out ? 'o' : ''} ${S.sel.has(x.idx) ? 'on' : ''} ${S.focus === x.idx ? 'fx' : ''}" data-row="${x.idx}"><div class="c ck"><input type="checkbox" data-i="${x.idx}" ${S.sel.has(x.idx) ? 'checked' : ''}></div><div class="c">${x.idx}</div><div class="c">${f2(x.x)}</div><div class="c">${f2(x.y)}</div><div class="c">${f6(x.vec)}</div><div class="c">${f6(x.maxd)}</div><div class="c">${f6(x.cdist)}</div><div class="c"><span class="${x.out ? 'rb' : 'rg'}">${x.out ? 'OUT' : 'OK'}</span></div></div>`).join('');
   }
 
   // ---------- export ----------
@@ -337,11 +377,11 @@
     document.querySelectorAll('#viewFat [data-cond]').forEach(i => i.addEventListener('input', () => { S.cond[i.dataset.cond] = i.value; saveCond(); }));
     $('#fatOutOnly').addEventListener('change', e => { S.outOnly = e.target.checked; $('#fatVp').scrollTop = 0; renderTable(); });
     $('#fatTh').addEventListener('click', e => {
-      if (e.target.id === 'fatAll') { if (e.target.checked) viewRows.forEach(x => S.sel.add(x.idx)); else viewRows.forEach(x => S.sel.delete(x.idx)); paintRows(); renderButtons(); return; }
+      if (e.target.id === 'fatAll') { if (e.target.checked) viewRows.forEach(x => S.sel.add(x.idx)); else viewRows.forEach(x => S.sel.delete(x.idx)); paintRows(); renderButtons(); drawChart(); return; }
       const b = e.target.closest('[data-sort]'); if (!b) return;
       S.sort = { k: b.dataset.sort, d: S.sort.k === b.dataset.sort ? -S.sort.d : (b.dataset.sort === 'idx' ? 1 : -1) }; renderTable();
     });
-    $('#fatRows').addEventListener('change', e => { const c = e.target.closest('[data-i]'); if (!c) return; const i = Number(c.dataset.i); if (c.checked) S.sel.add(i); else S.sel.delete(i); c.closest('.fr').classList.toggle('on', c.checked); renderButtons(); const all = $('#fatAll'); if (all) all.checked = viewRows.length > 0 && viewRows.every(x => S.sel.has(x.idx)); });
+    $('#fatRows').addEventListener('change', e => { const c = e.target.closest('[data-i]'); if (!c) return; const i = Number(c.dataset.i); if (c.checked) S.sel.add(i); else S.sel.delete(i); c.closest('.fr').classList.toggle('on', c.checked); renderButtons(); drawChart(); const all = $('#fatAll'); if (all) all.checked = viewRows.length > 0 && viewRows.every(x => S.sel.has(x.idx)); });
     $('#fatVp').addEventListener('scroll', () => { if (viewRows.length) requestAnimationFrame(paintRows); }, { passive: true });
     $('#fatDelSel').addEventListener('click', async () => { const n = S.sel.size; if (!n || !(await confirmBox('선택 삭제', `선택한 ${n}개 점을 삭제할까요? 삭제 후 Index를 다시 매기고 모든 결과를 다시 계산합니다.`))) return; mutatePts(new Set(S.sel), `${n}개 점 삭제 · 재계산 완료`); });
     $('#fatDelOut').addEventListener('click', async () => { const o = S.res ? S.res.outs.map(x => x.idx) : []; if (!o.length || !(await confirmBox('OUT 전체 삭제', `OUT ${o.length}개 점을 삭제할까요? 중심이 바뀌어 새로운 OUT이 생길 수 있습니다.`))) return; mutatePts(new Set(o), `OUT ${o.length}개 삭제 · 재계산 완료${''}`); if (S.res && S.res.outs.length) toast(`OUT ${o.length}개 삭제 · 중심 이동으로 새 OUT ${S.res.outs.length}개`); });
@@ -349,6 +389,12 @@
     $('#fatRestore').addEventListener('click', () => { if (!S.meta) return; S.undo.push(S.pts); S.pts = S.orig.slice(); S.sel.clear(); recalc(); toast('원본 데이터로 복원했습니다'); });
     $('#fatExcelAx').addEventListener('change', e => { S.excelAxis = e.target.checked; saveCond(); drawChart(); });
     $('#fatPng').addEventListener('click', exportPng);
+    // row click (not the checkbox) → show the point on the chart; chart click → index + scroll to the row
+    $('#fatRows').addEventListener('click', e => { if (e.target.closest('input')) return; const r = e.target.closest('[data-row]'); if (!r) return; const i = Number(r.dataset.row); focusPoint(S.focus === i ? null : i, false); });
+    const cv = $('#fatCanvas');
+    cv.addEventListener('click', e => { const p = nearest(e); focusPoint(p ? p.idx : null, true); });
+    cv.addEventListener('mousemove', e => { const p = nearest(e); cv.style.cursor = p ? 'pointer' : 'default'; cv.title = p ? `Index ${p.idx} (${f2(p.x)}, ${f2(p.y)})${p.out ? ' · OUT' : ''}` : ''; });
+    $('#fatPick').addEventListener('click', e => { if (e.target.closest('.fp-x')) focusPoint(null); });
     $('#fatXlsx').addEventListener('click', exportXlsx);
     let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (!view().hidden) drawChart(); }, 120); });
     if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!view().hidden) drawChart(); });
