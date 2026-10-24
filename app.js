@@ -263,7 +263,9 @@
     renderSync();
     renderNcr();
     $('#projCnt').textContent = activeProjects().length || '';
-    if (window.FatTab) window.FatTab.setProjects(projects().slice().sort((a, b) => (a.state === b.state ? String(a.projectName).localeCompare(String(b.projectName)) : a.state === 'active' ? -1 : 1)).map(p => p.projectName));
+    // FAT test project list: placed projects whose current step is 3~6 (FAT 셋업 ~ FAT 측정(AWC))
+    if (window.FatTab) window.FatTab.setProjects(Object.values(bySlot()).map(p => ({ p, i: projectInfo(p) })).filter(x => x.i.curNo >= 3 && x.i.curNo <= 6)
+      .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · ${i.cur.stepNo}. ${i.cur.stepName}` })));
     syncLabel();
     // re-render the open project only for local changes (server syncs must not wipe what the user is typing)
     if (!fromServer && state.openProjectId && !$('#overlay').hidden) {

@@ -92,7 +92,7 @@
   const TI = { proj: '', hand: '', test: '', no: '', date: today() };
   try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
   const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
-  let PROJECTS = [];
+  let PROJECTS = null; // null = not loaded yet; [{ name, label }]
   const S = { meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
   try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; } catch (_) { /* storage blocked */ }
   const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis }))); } catch (_) { /* ignore */ } };
@@ -337,9 +337,11 @@
   }
   function renderInfo() {
     const sel = $('#fiProj'); if (!sel) return;
-    const names = PROJECTS.slice();
-    if (TI.proj && !names.includes(TI.proj)) names.unshift(TI.proj);
-    sel.innerHTML = `<option value="">프로젝트 선택</option>` + names.map(n => `<option value="${esc(n)}" ${n === TI.proj ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    const list = PROJECTS || [];
+    if (PROJECTS && TI.proj && !list.some(x => x.name === TI.proj)) { TI.proj = ''; saveInfo(); }
+    sel.innerHTML = `<option value="">${!PROJECTS ? '프로젝트 불러오는 중…' : list.length ? `프로젝트 선택 (${list.length})` : '선택 가능한 프로젝트 없음 (배치 + 3~6번 공정)'}</option>`
+      + list.map(x => `<option value="${esc(x.name)}" ${x.name === TI.proj ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+    sel.title = '배치된 프로젝트 중 현재 공정이 3~6번(FAT 셋업 ~ FAT 측정(AWC))인 프로젝트';
     const m = infoMissing();
     $('#fiName').innerHTML = m.length ? `<span class="fi-wait">미입력: ${m.map(x => x[1]).join(', ')}</span>` : `<span>파일명</span><b>${esc(baseName())}</b>`;
   }
