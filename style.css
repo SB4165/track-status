@@ -734,3 +734,64 @@ th.flt .nc-th, th.flt .nc-th i { color: var(--accent); opacity: 1; }
   .fat-tbl { overflow-x: auto; } .fat-th, .fat-tbl .fr, .fat-vp { min-width: 620px; }
   .fat-card { padding: 12px; }
 }
+
+/* ===== tab groups ===== */
+.subtabs { display: flex; gap: 4px; width: fit-content; max-width: 100%; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 11px; padding: 3px; margin: 0 0 14px; scrollbar-width: none; }
+.subtabs[hidden] { display: none; }
+.subtabs .tab { height: 30px; font-size: 12.5px; }
+@media (max-width: 640px) { .subtabs { width: 100%; } .subtabs .tab { flex: 1; justify-content: center; padding: 0 8px; } }
+
+/* ===== dashboard cards → list ===== */
+button.stat { font: inherit; color: inherit; text-align: left; width: 100%; cursor: pointer; transition: border-color .15s, transform .15s; }
+button.stat:hover { border-color: var(--accent); transform: translateY(-1px); }
+button.stat:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stat .k { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.stat .k .go { font-size: 11px; font-weight: 700; color: var(--text-3); opacity: 0; transition: opacity .15s; }
+button.stat:hover .k .go { opacity: 1; color: var(--accent); }
+.stl { display: grid; gap: 8px; }
+.stl-r { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 76px minmax(0, 1fr) 18px; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; }
+.stl-r:hover { border-color: var(--accent); background: var(--surface-2); }
+.stl-r:focus-visible { outline: 2px solid var(--accent); }
+.stl-s { display: inline-block; text-align: center; font-size: 12px; font-weight: 800; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
+.stl-m { display: grid; gap: 5px; min-width: 0; }
+.stl-m > b { font-size: 14.5px; }
+.stl-c { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.stl-c .cs1 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.stl-p { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); font-weight: 700; }
+.stl-p .bar { width: 140px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.stl-p .bar i { display: block; height: 100%; background: #16a34a; }
+.stl-x { font-size: 12.5px; color: var(--text-2); white-space: pre-line; line-height: 1.5; }
+.stl-x.warn { color: var(--danger); }
+.stl-x em { font-style: normal; font-weight: 800; margin-right: 6px; color: var(--text-3); }
+.stl-go { color: var(--text-3); font-size: 20px; line-height: 1; align-self: center; }
+@media (max-width: 640px) { .stl-r { grid-template-columns: 1fr 14px; } .stl-s { justify-self: start; grid-column: 1 / -1; } }
+
+/* FAT layout v3: [input | chart | 측정값] / [input | 결과 | 측정값] — table visible without scrolling */
+.fat-grid { grid-template-columns: minmax(270px, 320px) minmax(360px, 460px) minmax(0, 1fr); grid-template-areas: "in ch tb" "in rs tb"; align-items: stretch; }
+.fat-in { grid-area: in; align-self: start; } .fat-chart { grid-area: ch; } .fat-res { grid-area: rs; } .fat-meas { grid-area: tb; display: flex; flex-direction: column; contain: size; min-height: 620px; }
+.fat-meas .fat-tbl { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.fat-meas .fat-vp { flex: 1; height: auto; min-height: 360px; }
+.fat-meas .fat-h .btn { height: 30px; padding: 0 10px; }
+.fat-meas .fat-warn { padding: 5px 9px; font-size: 11.5px; }
+.fat-tbl .c { padding: 0 6px; font-size: 12px; }
+.fat-th .c.s { padding: 8px 6px; }
+.fat-th, .fat-tbl .fr { grid-template-columns: 30px 48px repeat(5, minmax(0, 1fr)) 52px; }
+.fat-res .fs-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.fat-res .fs.key { order: -1; grid-column: 1 / -1; }
+.fat-res .fs { padding: 8px 10px; } .fat-res .fs b { font-size: 17px; }
+.fat-res .fs-grid { grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+.fat-res .fs-t { width: 100%; }
+.fat-res .fs-out { max-height: 150px; }
+.fat-ta { height: 130px; }
+.fat-cv { min-height: 300px; }
+.fat-chart .fat-h { margin-bottom: 4px; }
+@media (max-width: 1280px) {
+  .fat-grid { grid-template-columns: minmax(270px, 320px) minmax(0, 1fr); grid-template-areas: "in ch" "rs rs" "tb tb"; }
+  .fat-res .fs-row { grid-template-columns: repeat(5, minmax(0, 1fr)); } .fat-res .fs.key { order: 0; grid-column: auto; }
+  .fat-res .fs-grid { grid-template-columns: auto auto minmax(0, 1fr); }
+  .fat-meas { contain: none; min-height: 0; } .fat-meas .fat-vp { flex: none; height: 420px; }
+}
+@media (max-width: 900px) {
+  .fat-grid { grid-template-columns: 1fr; grid-template-areas: "in" "ch" "rs" "tb"; }
+  .fat-res .fs-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fat-res .fs-grid { grid-template-columns: 1fr; }
+}

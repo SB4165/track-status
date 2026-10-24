@@ -271,8 +271,13 @@
     }
   }
 
+  // top groups: 대시보드 | 프로젝트 관리 (projects · sync · ncr) | FAT 테스트
+  const PM_TABS = ['projects', 'sync', 'ncr'];
   function renderTabs() {
-    $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === state.tab));
+    const pm = PM_TABS.includes(state.tab);
+    if (pm) LS.set('track.pmTab', state.tab);
+    $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === state.tab || (t.dataset.tab === 'pm' && pm)));
+    $('#subTabs').hidden = !pm;
     $('#viewBoard').hidden = state.tab !== 'board';
     $('#viewProjects').hidden = state.tab !== 'projects';
     $('#viewSync').hidden = state.tab !== 'sync';
@@ -380,11 +385,11 @@
     const avg = placed.length ? Math.round(placed.reduce((a, p) => a + projectInfo(p).pct, 0) / placed.length) : 0;
     const unplaced = activeProjects().filter(p => !p.slot).length;
     $('#stats').innerHTML = [
-      ['배치 프로젝트', `${placed.length}<small> / ${slotNos().length}칸 · 대기 ${unplaced}</small>`],
-      ['평균 진척률', avg + '%'],
-      ['조치중', fixing, fixing ? 'warn' : ''],
-      ['이슈 있음', issues, issues ? 'warn' : ''],
-    ].map(([k, v, c]) => `<div class="stat ${c || ''}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+      ['placed', '배치 프로젝트', `${placed.length}<small> / ${slotNos().length}칸 · 대기 ${unplaced}</small>`],
+      ['avg', '평균 진척률', avg + '%'],
+      ['fixing', '조치중', fixing, fixing ? 'warn' : ''],
+      ['issue', '이슈 있음', issues, issues ? 'warn' : ''],
+    ].map(([key, k, v, c]) => `<button type="button" class="stat ${c || ''}" data-stat="${key}" title="눌러서 프로젝트 목록 보기"><div class="k">${k}<span class="go">목록 ›</span></div><div class="v">${v}</div></button>`).join('');
 
     $('#plan').style.setProperty('--ch', planH());
     $('#plan').innerHTML = d.layout.map(it => {
@@ -571,6 +576,36 @@
   }
 
   // ===================== Modal =====================
+  // dashboard card → project list (placed projects; row opens the project)
+  const STAT_DEF = {
+    placed: ['배치 프로젝트', '배치된 프로젝트 · 배치 칸 순', () => true],
+    avg: ['평균 진척률', '배치된 프로젝트 · 진척률 높은 순', () => true],
+    fixing: ['조치중', '조치중 공정이 있는 프로젝트', i => i.fixing.length > 0],
+    issue: ['이슈 있음', '이슈·조치중·보류가 있는 프로젝트', i => i.hasIssue],
+  };
+  function openStatList(key) {
+    const def = STAT_DEF[key]; if (!def) return;
+    state.openProjectId = null;
+    let list = Object.values(bySlot()).map(p => ({ p, i: projectInfo(p) })).filter(x => def[2](x.i));
+    list.sort(key === 'avg' ? (a, b) => b.i.pct - a.i.pct || a.p.slot - b.p.slot : (a, b) => a.p.slot - b.p.slot);
+    $('#mSlot').textContent = def[1];
+    $('#mTitle').textContent = `${def[0]} · ${list.length}건`;
+    const fixTxt = i => i.fixing.map(s => `${s.stepNo}. ${s.stepName}${String(s.issue || '').trim() ? ' — ' + String(s.issue).trim() : ''}`).join('\n');
+    $('#mBody').innerHTML = list.length ? `<div class="stl">${list.map(({ p, i }) => {
+      const cur = i.cur ? i.curGroup.map(s => `<span class="cs1"><span class="t">${s.stepNo}. ${esc(s.stepName)}</span>${pill(s.status)}</span>`).join('') : `<span class="t">전 공정 완료</span>${pill('완료')}`;
+      const extra = key === 'fixing' ? fixTxt(i) : (key === 'issue' ? (i.issueTip || fixTxt(i)) : (i.prog || ''));
+      const lbl = key === 'fixing' ? '조치중' : key === 'issue' ? '이슈' : '진행';
+      return `<button type="button" class="stl-r" data-open="${esc(p.id)}">
+        <span class="stl-s">${esc(slotName(p.slot))}</span>
+        <span class="stl-m"><b>${esc(p.projectName)}</b><span class="stl-c">${cur}</span>
+          <span class="stl-p"><span class="bar"><i style="width:${i.pct}%"></i></span>${i.done}/${i.total} · ${i.pct}%</span>
+          ${extra ? `<span class="stl-x ${key === 'fixing' || key === 'issue' ? 'warn' : ''}"><em>${lbl}</em>${esc(lineBreaks(extra))}</span>` : ''}</span>
+        <span class="stl-go">›</span></button>`;
+    }).join('')}</div>` : '<div class="empty-msg">해당하는 프로젝트가 없습니다.</div>';
+    openModal(false);
+  }
+  $('#stats').addEventListener('click', e => { const b = e.target.closest('[data-stat]'); if (b) openStatList(b.dataset.stat); });
+
   function openModal(narrow) {
     $('.sheet').classList.toggle('narrow', !!narrow);
     $('#mSave').hidden = true; // only the project detail shows the top save button
@@ -1137,7 +1172,10 @@
   });
 
   // ===================== Events =====================
-  $$('.tab').forEach(t => t.addEventListener('click', () => { state.tab = t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0);
+  // top badge = sync waiting + nonconformance open (sub-tab badges stay as they are)
+  const pmBadge = () => { const n = ['#syncCnt', '#ncrCnt'].reduce((a, s) => a + (Number($(s).textContent) || 0), 0); $('#pmCnt').textContent = n || ''; };
+  ['#syncCnt', '#ncrCnt'].forEach(s => new MutationObserver(pmBadge).observe($(s), { childList: true, characterData: true, subtree: true }));
+  $$('.tab').forEach(t => t.addEventListener('click', () => { state.tab = t.dataset.tab === 'pm' ? (PM_TABS.includes(LS.get('track.pmTab')) ? LS.get('track.pmTab') : 'projects') : t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0);
     if (state.tab === 'sync') { if (!SY.rows) loadSync(false); else renderSync(); }
     if (state.tab === 'ncr') renderNcr(); else closeNcPop();
   }));
@@ -1273,6 +1311,8 @@
   }
 
   $('#mBody').addEventListener('click', e => {
+    const so = e.target.closest('.stl-r[data-open]');
+    if (so) { const p = findProject(so.dataset.open); if (p) { state.openStep = null; renderProject(p, false); $('#mBody').scrollTop = 0; } return; }
     const nx = e.target.closest('[data-nx],[data-nxd]');
     if (nx) {
       e.preventDefault();

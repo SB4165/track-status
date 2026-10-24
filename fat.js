@@ -86,8 +86,8 @@
   const LSK = 'track.fat.cond';
   const COND = [['xs', 'X-axis', '2400', 'mm/s'], ['ts', 'T-axis', '450', 'deg/s'], ['zs', 'Z-axis', '1200', 'mm/s'], ['ys', 'Y-axis', '2000', 'mm/s']];
   const S = { meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
-  try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; } catch (_) { /* storage blocked */ }
-  const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius }))); } catch (_) { /* ignore */ } };
+  try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; } catch (_) { /* storage blocked */ }
+  const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis }))); } catch (_) { /* ignore */ } };
   const toast = (m, err) => { const t = $('#toast'); if (!t) return; t.textContent = m; t.className = 'toast' + (err ? ' err' : ''); t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600); };
 
   function view() { return $('#viewFat'); }
@@ -109,13 +109,12 @@
         </section>
         <section class="fat-card fat-chart">
           <div class="fat-h"><h3>XY Repeatability</h3><span class="fat-name" id="fatName"></span>
-            <button class="btn" id="fatPng" disabled>그래프 PNG</button><button class="btn" id="fatXlsx" disabled>엑셀</button></div>
+            <label class="fat-chk fat-ax" title="엑셀 결과값 시트와 같은 축 범위(0 포함)로 보기"><input type="checkbox" id="fatExcelAx" ${S.excelAxis ? 'checked' : ''}> 엑셀 축</label><button class="btn" id="fatPng" disabled>그래프 PNG</button><button class="btn" id="fatXlsx" disabled>엑셀</button></div>
           <div class="fat-cv"><canvas id="fatCanvas" aria-label="XY Repeatability 산점도"></canvas><div class="fat-empty" id="fatEmpty">로그를 붙여넣으면 그래프가 표시됩니다</div></div>
           <div class="fat-lg"><span><i class="d b"></i>Measured</span><span><i class="l"></i>Reference circle</span><span><i class="d r"></i>Outside circle</span></div>
         </section>
-      </div>
-      <section class="fat-card"><div class="fat-sum" id="fatSum"></div></section>
-      <section class="fat-card">
+        <section class="fat-card fat-res"><div class="fat-h"><h3>결과</h3></div><div class="fat-sum" id="fatSum"></div></section>
+      <section class="fat-card fat-meas">
         <div class="fat-h"><h3>측정값</h3>
           <label class="fat-chk"><input type="checkbox" id="fatOutOnly"> OUT만 보기</label>
           <span class="fat-sp"></span>
@@ -123,9 +122,10 @@
           <button class="btn danger-o" id="fatDelOut" disabled>OUT 전체 삭제</button>
           <button class="btn ghost" id="fatUndo" disabled>되돌리기</button>
           <button class="btn ghost" id="fatRestore" disabled>원본으로 복원</button></div>
-        <div class="fat-warn">OUT을 삭제하면 기준원 중심((Xmax+Xmin)/2, (Ymax+Ymin)/2)이 바뀌어 새로운 OUT이 생길 수 있습니다. 삭제 후 결과를 다시 확인하세요.</div>
+        <div class="fat-warn">OUT을 삭제하면 기준원 중심이 바뀌어 새로운 OUT이 생길 수 있습니다. 삭제 후 결과를 다시 확인하세요.</div>
         <div class="fat-tbl" id="fatTbl"><div class="fat-th" id="fatTh"></div><div class="fat-vp" id="fatVp"><div class="fat-sz" id="fatSz"></div><div class="fat-rows" id="fatRows"></div></div></div>
-      </section>`;
+      </section>
+      </div>`;
     bind();
     renderAll();
   }
@@ -188,21 +188,30 @@
     const padL = 64, padB = 48, padT = opt.title ? 46 : 14, padR = 18;
     const side = Math.min(W - padL - padR, Hh - padT - padB);
     const ox = padL + Math.max(0, (W - padL - padR - side) / 2), oy = padT;
-    const a0 = r.axMin, a1 = r.axMax, span = (a1 - a0) || 1;
-    const sx = v => ox + (v - a0) / span * side, sy = v => oy + side - (v - a0) / span * side;
+    // axes: 'fit' = zoomed to points + reference circle (equal scale), 'excel' = 결과값 sheet range (incl. 0)
+    let x0, y0, span;
+    if (opt.excel) { x0 = y0 = r.axMin; span = (r.axMax - r.axMin) || 1; }
+    else {
+      const xl = Math.min(r.xmin, r.cx - r.radius), xh = Math.max(r.xmax, r.cx + r.radius), yl = Math.min(r.ymin, r.cy - r.radius), yh = Math.max(r.ymax, r.cy + r.radius);
+      span = (Math.max(xh - xl, yh - yl) || 1) * 1.08; x0 = (xl + xh) / 2 - span / 2; y0 = (yl + yh) / 2 - span / 2;
+    }
+    const sx = v => ox + (v - x0) / span * side, sy = v => oy + side - (v - y0) / span * side;
     if (opt.title) { ctx.fillStyle = fg; ctx.font = `700 17px ${font}`; ctx.textAlign = 'center'; ctx.fillText(opt.title, ox + side / 2, 28); }
     const step = niceStep(span, side < 420 ? 5 : 8);
     ctx.font = `12px ${font}`; ctx.lineWidth = 1;
-    for (let t = Math.ceil(a0 / step) * step; t <= a1 + 1e-9; t += step) {
-      const X = sx(t), Y = sy(t);
-      ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(X, oy); ctx.lineTo(X, oy + side); ctx.moveTo(ox, Y); ctx.lineTo(ox + side, Y); ctx.stroke();
-      ctx.fillStyle = fg2; ctx.textAlign = 'center'; ctx.fillText(t.toFixed(1), X, oy + side + 16); ctx.textAlign = 'right'; ctx.fillText(t.toFixed(1), ox - 6, Y + 4);
+    for (let t = Math.ceil(x0 / step) * step; t <= x0 + span + 1e-9; t += step) {
+      const X = sx(t); ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(X, oy); ctx.lineTo(X, oy + side); ctx.stroke();
+      ctx.fillStyle = fg2; ctx.textAlign = 'center'; ctx.fillText(t.toFixed(1), X, oy + side + 16);
+    }
+    for (let t = Math.ceil(y0 / step) * step; t <= y0 + span + 1e-9; t += step) {
+      const Y = sy(t); ctx.strokeStyle = grid; ctx.beginPath(); ctx.moveTo(ox, Y); ctx.lineTo(ox + side, Y); ctx.stroke();
+      ctx.fillStyle = fg2; ctx.textAlign = 'right'; ctx.fillText(t.toFixed(1), ox - 6, Y + 4);
     }
     ctx.strokeStyle = fg2; ctx.strokeRect(ox, oy, side, side);
     ctx.fillStyle = fg; ctx.font = `600 13px ${font}`; ctx.textAlign = 'center'; ctx.fillText('X (um)', ox + side / 2, oy + side + 38);
     ctx.save(); ctx.translate(16, oy + side / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Y (um)', 0, 0); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, side, side); ctx.clip();
-    const dot = Math.max(2.2, Math.min(4, side / 150));
+    const dot = Math.max(2.2, Math.min(opt.excel ? 4 : 5, side / 150));
     ctx.fillStyle = '#2f6bff'; ctx.globalAlpha = r.n > 2000 ? 0.55 : 0.85;
     for (const p of r.rows) { ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), dot, 0, Math.PI * 2); ctx.fill(); }
     ctx.globalAlpha = 1; ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 2; ctx.beginPath();
@@ -215,12 +224,12 @@
   function drawChart() {
     const cv = $('#fatCanvas'); if (!cv) return;
     const box = cv.parentElement; const w = box.clientWidth; if (!w) return;
-    const h = Math.min(w, Math.max(320, Math.min(620, window.innerHeight - 220)));
+    const h = Math.min(w, Math.max(300, Math.min(440, window.innerHeight - 330)));
     const dpr = window.devicePixelRatio || 1;
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px';
     const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
     $('#fatEmpty').hidden = !!S.res;
-    if (S.res) drawTo(ctx, w, h, S.res, {});
+    if (S.res) drawTo(ctx, w, h, S.res, { excel: S.excelAxis });
   }
 
   // ---------- virtual table ----------
@@ -254,7 +263,7 @@
     const r = S.res; if (!r) return;
     const W = 1400, H = 960, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-    drawTo(ctx, 920, H, r, { print: true, title: 'XY Repeatability' + (S.name ? ' — ' + S.name : '') });
+    drawTo(ctx, 920, H, r, { print: true, excel: S.excelAxis, title: 'XY Repeatability' + (S.name ? ' — ' + S.name : '') });
     const font = '"Pretendard Variable", Pretendard, system-ui, sans-serif';
     let y = 70; const x0 = 950;
     const line = (k, v, b) => { ctx.fillStyle = '#5b6372'; ctx.font = `13px ${font}`; ctx.textAlign = 'left'; ctx.fillText(k, x0, y); ctx.fillStyle = '#1b1f27'; ctx.font = `${b ? 800 : 600} 15px ${font}`; ctx.textAlign = 'right'; ctx.fillText(String(v), W - 40, y); y += 28; };
@@ -338,6 +347,7 @@
     $('#fatDelOut').addEventListener('click', async () => { const o = S.res ? S.res.outs.map(x => x.idx) : []; if (!o.length || !(await confirmBox('OUT 전체 삭제', `OUT ${o.length}개 점을 삭제할까요? 중심이 바뀌어 새로운 OUT이 생길 수 있습니다.`))) return; mutatePts(new Set(o), `OUT ${o.length}개 삭제 · 재계산 완료${''}`); if (S.res && S.res.outs.length) toast(`OUT ${o.length}개 삭제 · 중심 이동으로 새 OUT ${S.res.outs.length}개`); });
     $('#fatUndo').addEventListener('click', () => { if (!S.undo.length) return; S.pts = S.undo.pop(); S.sel.clear(); recalc(); toast('되돌렸습니다'); });
     $('#fatRestore').addEventListener('click', () => { if (!S.meta) return; S.undo.push(S.pts); S.pts = S.orig.slice(); S.sel.clear(); recalc(); toast('원본 데이터로 복원했습니다'); });
+    $('#fatExcelAx').addEventListener('change', e => { S.excelAxis = e.target.checked; saveCond(); drawChart(); });
     $('#fatPng').addEventListener('click', exportPng);
     $('#fatXlsx').addEventListener('click', exportXlsx);
     let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (!view().hidden) drawChart(); }, 120); });
