@@ -85,6 +85,14 @@
   const f2 = (v) => (v == null || !isFinite(v) ? '-' : (Math.round(v * 100) / 100).toFixed(2));
   const LSK = 'track.fat.cond';
   const COND = [['xs', 'X-axis', '2400', 'mm/s'], ['ts', 'T-axis', '450', 'deg/s'], ['zs', 'Z-axis', '1200', 'mm/s'], ['ys', 'Y-axis', '2000', 'mm/s']];
+  const HANDS = ['X1', 'X2'];
+  const TESTS = [['rep', '반복정밀도', '반복정밀도'], ['awc', 'AWC', 'AWC']]; // [key, label, file token]
+  const today = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+  const TIK = 'track.fat.info';
+  const TI = { proj: '', hand: '', test: '', no: '', date: today() };
+  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
+  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
+  let PROJECTS = [];
   const S = { meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
   try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; } catch (_) { /* storage blocked */ }
   const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis }))); } catch (_) { /* ignore */ } };
@@ -96,7 +104,16 @@
     v.innerHTML = `
       <div class="fat-grid">
         <section class="fat-card fat-in">
-          <div class="fat-h"><h3>로그 입력</h3>
+          <div class="fat-h"><h3>테스트 정보</h3><span class="fat-hint">내보내기 파일명에 사용</span></div>
+          <div class="fat-info" id="fatInfo">
+            <label class="fi-w"><span>프로젝트</span><select class="in" id="fiProj"></select></label>
+            <label><span>핸드</span><span class="seg" data-fi="hand">${HANDS.map(h => `<button type="button" data-v="${h}" class="${TI.hand === h ? 'on' : ''}">${h}</button>`).join('')}</span></label>
+            <label><span>테스트</span><span class="seg" data-fi="test">${TESTS.map(([v, l]) => `<button type="button" data-v="${v}" class="${TI.test === v ? 'on' : ''}">${l}</button>`).join('')}</span></label>
+            <label><span>테스트 번호</span><span class="fi-no"><em>Test</em><input class="in" id="fiNo" placeholder="001" value="${esc(TI.no)}" maxlength="20" autocomplete="off"></span></label>
+            <label><span>테스트 날짜</span><input class="in" id="fiDate" type="date" value="${esc(TI.date)}"></label>
+            <div class="fi-name" id="fiName"></div>
+          </div>
+          <div class="fat-h fat-h2"><h3>로그 입력</h3>
             <label class="btn fat-file" title="파일은 이 브라우저 안에서만 읽습니다 (서버 전송 없음)"><input type="file" id="fatFile" accept=".log,.txt,.csv,text/plain" hidden>파일 선택</label>
             <button class="btn ghost" id="fatReset">데이터 초기화</button></div>
           <textarea id="fatText" class="fat-ta" spellcheck="false" placeholder="측정 로그(.log) 내용을 여기에 붙여넣으세요.&#10;마지막 FirstPoint 줄부터 끝까지 자동으로 계산합니다.&#10;로그는 이 브라우저 안에서만 계산되고 저장·전송되지 않습니다."></textarea>
@@ -128,6 +145,7 @@
       </section>
       </div>`;
     bind();
+    renderInfo();
     renderAll();
   }
 
@@ -297,13 +315,40 @@
 
   // ---------- export ----------
   const stamp = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
-  const baseName = () => (S.name ? S.name.replace(/\.[^.]+$/, '') : 'FAT_TEST');
+  // export name: <project>_<hand>_<test>_Test<no>_<yymmdd>  e.g. MISC-MPR6 #1_X1_AWC_Test001_261024
+  const yymmdd = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? d.slice(2).replace(/-/g, '') : '');
+  const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '-').trim();
+  function infoMissing() {
+    const m = [];
+    if (!TI.proj) m.push(['fiProj', '프로젝트']); if (!TI.hand) m.push(['hand', '핸드']); if (!TI.test) m.push(['test', '테스트']);
+    if (!String(TI.no).trim()) m.push(['fiNo', '테스트 번호']); if (!yymmdd(TI.date)) m.push(['fiDate', '테스트 날짜']);
+    return m;
+  }
+  const baseName = () => safe(`${TI.proj}_${TI.hand}_${(TESTS.find(t => t[0] === TI.test) || [])[2] || TI.test}_Test${String(TI.no).trim()}_${yymmdd(TI.date)}`);
+  const infoLine = () => `${TI.proj} · ${TI.hand} · ${(TESTS.find(t => t[0] === TI.test) || [])[1] || ''} · Test${String(TI.no).trim()} · ${TI.date}`;
+  function canExport() {
+    const m = infoMissing();
+    document.querySelectorAll('#fatInfo .miss').forEach(x => x.classList.remove('miss'));
+    if (!m.length) return true;
+    m.forEach(([id]) => { const el = id === 'hand' || id === 'test' ? $(`#fatInfo [data-fi="${id}"]`) : $('#' + id); if (el) el.classList.add('miss'); });
+    toast('테스트 정보를 입력해 주세요: ' + m.map(x => x[1]).join(', '), true);
+    $('#fatInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return false;
+  }
+  function renderInfo() {
+    const sel = $('#fiProj'); if (!sel) return;
+    const names = PROJECTS.slice();
+    if (TI.proj && !names.includes(TI.proj)) names.unshift(TI.proj);
+    sel.innerHTML = `<option value="">프로젝트 선택</option>` + names.map(n => `<option value="${esc(n)}" ${n === TI.proj ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    const m = infoMissing();
+    $('#fiName').innerHTML = m.length ? `<span class="fi-wait">미입력: ${m.map(x => x[1]).join(', ')}</span>` : `<span>파일명</span><b>${esc(baseName())}</b>`;
+  }
   function download(blob, name) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); }
   function exportPng() {
-    const r = S.res; if (!r) return;
+    const r = S.res; if (!r || !canExport()) return;
     const W = 1400, H = 960, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-    drawTo(ctx, 920, H, r, { print: true, excel: S.excelAxis, title: 'XY Repeatability' + (S.name ? ' — ' + S.name : '') });
+    drawTo(ctx, 920, H, r, { print: true, excel: S.excelAxis, title: 'XY Repeatability — ' + infoLine() });
     const font = '"Pretendard Variable", Pretendard, system-ui, sans-serif';
     let y = 70; const x0 = 950;
     const line = (k, v, b) => { ctx.fillStyle = '#5b6372'; ctx.font = `13px ${font}`; ctx.textAlign = 'left'; ctx.fillText(k, x0, y); ctx.fillStyle = '#1b1f27'; ctx.font = `${b ? 800 : 600} 15px ${font}`; ctx.textAlign = 'right'; ctx.fillText(String(v), W - 40, y); y += 28; };
@@ -315,20 +360,21 @@
     if (S.meta) { line('TargetArear', S.meta.target ?? '-'); line('Resolution', S.meta.resolution ?? '-'); }
     y += 10; ctx.fillStyle = '#1b1f27'; ctx.font = `800 16px ${font}`; ctx.textAlign = 'left'; ctx.fillText('TEST CONDITION', x0, y); y += 28;
     COND.forEach(([k, l, d, u]) => line(l, `${S.cond[k] ?? d} ${u}`));
-    cv.toBlob(b => { download(b, `${baseName()}_XY_${stamp()}.png`); toast('그래프 이미지를 저장했습니다'); }, 'image/png');
+    cv.toBlob(b => { download(b, `${baseName()}.png`); toast('그래프 이미지를 저장했습니다'); }, 'image/png');
   }
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
     return new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = () => res(window.XLSX); s.onerror = () => rej(new Error('엑셀 모듈을 불러오지 못했습니다')); document.head.appendChild(s); });
   }
   async function exportXlsx() {
-    const r = S.res; if (!r) return;
+    const r = S.res; if (!r || !canExport()) return;
     const btn = $('#fatXlsx'); btn.disabled = true; btn.textContent = '생성 중…';
     try {
       const X = await loadXlsx();
       const R6 = v => Math.round(v * 1e6) / 1e6;
       const sum = [
-        ['XY Repeatability 결과', S.name || ''], [],
+        ['XY Repeatability 결과', baseName()], [],
+        ['프로젝트', TI.proj], ['핸드', TI.hand], ['테스트', (TESTS.find(t => t[0] === TI.test) || [])[1] || ''], ['테스트 번호', 'Test' + String(TI.no).trim()], ['테스트 날짜', TI.date], ['로그 파일', S.name || '(붙여넣기)'], [],
         ['Average Vector', R6(r.avg)], ['Min Vector', R6(r.vmin)], ['Max Vector', R6(r.vmax)], ['P-P Diameter', R6(r.pp)], [],
         ['', 'MAX', 'MIN', 'P-P'], ['X', r.xmax, r.xmin, R6(r.xpp)], ['Y', r.ymax, r.ymin, R6(r.ypp)], [],
         ['기준원 중심 X', R6(r.cx)], ['기준원 중심 Y', R6(r.cy)], ['반경 (um)', r.radius], ['OUT Count', r.outs.length], [],
@@ -342,7 +388,7 @@
       const add = (aoa, name, w) => { const ws = X.utils.aoa_to_sheet(aoa); ws['!cols'] = w.map(c => ({ wch: c })); X.utils.book_append_sheet(wb, ws, name); };
       add(sum, '결과값', [34, 16, 16, 16]); add(meas, '측정값', [8, 10, 10, 14, 14, 14, 8]); add(circ, '기준원', [8, 14, 14]);
       const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
-      download(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${baseName()}_결과_${stamp()}.xlsx`);
+      download(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${baseName()}.xlsx`);
       toast('엑셀 파일을 저장했습니다');
     } catch (e) { toast(e.message, true); }
     btn.disabled = false; btn.textContent = '엑셀';
@@ -388,6 +434,10 @@
     $('#fatUndo').addEventListener('click', () => { if (!S.undo.length) return; S.pts = S.undo.pop(); S.sel.clear(); recalc(); toast('되돌렸습니다'); });
     $('#fatRestore').addEventListener('click', () => { if (!S.meta) return; S.undo.push(S.pts); S.pts = S.orig.slice(); S.sel.clear(); recalc(); toast('원본 데이터로 복원했습니다'); });
     $('#fatExcelAx').addEventListener('change', e => { S.excelAxis = e.target.checked; saveCond(); drawChart(); });
+    $('#fiProj').addEventListener('change', e => { TI.proj = e.target.value; e.target.classList.remove('miss'); saveInfo(); renderInfo(); });
+    $('#fatInfo').addEventListener('click', e => { const b = e.target.closest('.seg button'); if (!b) return; const seg = b.parentElement; TI[seg.dataset.fi] = b.dataset.v; seg.classList.remove('miss'); seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); saveInfo(); renderInfo(); });
+    $('#fiNo').addEventListener('input', e => { TI.no = e.target.value.replace(/[\\/:*?"<>|]/g, ''); if (TI.no !== e.target.value) e.target.value = TI.no; e.target.classList.remove('miss'); renderInfo(); });
+    $('#fiDate').addEventListener('change', e => { TI.date = e.target.value; e.target.classList.remove('miss'); renderInfo(); });
     $('#fatPng').addEventListener('click', exportPng);
     // row click (not the checkbox) → show the point on the chart; chart click → index + scroll to the row
     $('#fatRows').addEventListener('click', e => { if (e.target.closest('input')) return; const r = e.target.closest('[data-row]'); if (!r) return; const i = Number(r.dataset.row); focusPoint(S.focus === i ? null : i, false); });
@@ -401,5 +451,5 @@
   }
 
   // show hook (called by app.js when the tab opens)
-  root.FatTab = { show() { build(); requestAnimationFrame(() => { drawChart(); if (viewRows.length) paintRows(); }); } };
+  root.FatTab = { setProjects(list) { PROJECTS = list || []; renderInfo(); }, show() { build(); requestAnimationFrame(() => { drawChart(); if (viewRows.length) paintRows(); }); } };
 })(typeof window !== 'undefined' ? window : globalThis);

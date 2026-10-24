@@ -263,6 +263,7 @@
     renderSync();
     renderNcr();
     $('#projCnt').textContent = activeProjects().length || '';
+    if (window.FatTab) window.FatTab.setProjects(projects().slice().sort((a, b) => (a.state === b.state ? String(a.projectName).localeCompare(String(b.projectName)) : a.state === 'active' ? -1 : 1)).map(p => p.projectName));
     syncLabel();
     // re-render the open project only for local changes (server syncs must not wipe what the user is typing)
     if (!fromServer && state.openProjectId && !$('#overlay').hidden) {
@@ -1172,9 +1173,6 @@
   });
 
   // ===================== Events =====================
-  // top badge = sync waiting + nonconformance open (sub-tab badges stay as they are)
-  const pmBadge = () => { const n = ['#syncCnt', '#ncrCnt'].reduce((a, s) => a + (Number($(s).textContent) || 0), 0); $('#pmCnt').textContent = n || ''; };
-  ['#syncCnt', '#ncrCnt'].forEach(s => new MutationObserver(pmBadge).observe($(s), { childList: true, characterData: true, subtree: true }));
   $$('.tab').forEach(t => t.addEventListener('click', () => { state.tab = t.dataset.tab === 'pm' ? (PM_TABS.includes(LS.get('track.pmTab')) ? LS.get('track.pmTab') : 'projects') : t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0);
     if (state.tab === 'sync') { if (!SY.rows) loadSync(false); else renderSync(); }
     if (state.tab === 'ncr') renderNcr(); else closeNcPop();

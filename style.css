@@ -809,3 +809,21 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .fat-tbl .fr:hover { background: var(--surface-2); }
 .fat-tbl .fr.fx { background: #fff4d6; box-shadow: inset 3px 0 0 #f59e0b; }
 @media (prefers-color-scheme: dark) { .fat-tbl .fr.fx { background: #3a2a12; } }
+
+/* FAT test info */
+.fat-hint { font-size: 11.5px; color: var(--text-3); }
+.fat-h2 { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.fat-info { display: grid; gap: 7px; }
+.fat-info > label { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12.5px; }
+.fat-info > label > span:first-child { color: var(--text-2); font-weight: 600; }
+.fat-info .in { height: 32px; padding: 0 8px; min-width: 0; width: 100%; box-sizing: border-box; }
+.fat-info .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; width: fit-content; }
+.fat-info .seg button { border: 0; background: none; height: 26px; padding: 0 12px; border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--text-2); cursor: pointer; }
+.fat-info .seg button.on { background: var(--accent); color: #fff; }
+.fat-info .fi-no { display: flex; align-items: center; gap: 4px; }
+.fat-info .fi-no em { font-style: normal; font-weight: 700; color: var(--text-2); }
+.fat-info .miss { outline: 2px solid var(--danger); outline-offset: 1px; border-radius: 9px; }
+.fi-name { font-size: 12px; background: var(--surface-2); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.fi-name span { color: var(--text-3); }
+.fi-name b { font-weight: 800; color: var(--text); }
+.fi-name .fi-wait { color: #b45309; }
