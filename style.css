@@ -855,3 +855,45 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .proc-side li.par:not(.par-s):not(.par-e) { border-radius: 0; }
 .proc-side li.par-s em { transform: translateY(calc(-50% + (var(--gn, 2) - 1) * 13px)); }
 .proc-side.compact li.par-s em { transform: translateY(calc(-50% + (var(--gn, 2) - 1) * 10.5px)); }
+
+/* ===== dashboard: 통합 / 제조 / 품질 ===== */
+.dashtabs { display: flex; gap: 4px; width: fit-content; max-width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 11px; padding: 3px; margin: 0 0 12px; }
+.dtab { border: 0; background: none; height: 30px; padding: 0 16px; border-radius: 8px; font-weight: 700; font-size: 12.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.dtab.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+@media (max-width: 640px) { .dashtabs { width: 100%; } .dtab { flex: 1; } }
+.card.empty.ro { cursor: default; }
+.card.empty.ro:hover { transform: none; color: var(--text-3); border-color: var(--line-strong); box-shadow: none; }
+.card.all { gap: .3em; }
+.card.all .card-top { margin-bottom: .15em; }
+.card.all .trk { font-size: .8em; display: grid; gap: .2em; }
+.card.all .trk .th { display: flex; justify-content: space-between; align-items: baseline; gap: .4em; }
+.card.all .trk .tl { font-weight: 800; font-size: .85em; padding: 0 .45em; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-2); }
+.card.all .trk.mf .tl { color: #0e7490; border-color: color-mix(in srgb, #0e7490 35%, var(--line)); background: color-mix(in srgb, #0e7490 8%, var(--surface)); }
+.card.all .trk.qa .tl { color: #6b4fd8; border-color: color-mix(in srgb, #6b4fd8 35%, var(--line)); background: color-mix(in srgb, #6b4fd8 8%, var(--surface)); }
+.card.all .trk .tp { color: var(--text-3); font-weight: 700; font-size: .9em; white-space: nowrap; }
+.card.all .trk .tc { display: grid; gap: .1em; }
+.card.all .trk .tn { display: flex; align-items: center; justify-content: space-between; gap: .35em; min-width: 0; }
+.card.all .trk .tn b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.card.all .trk .tn .pill { flex: none; font-size: .85em; }
+.card.all .trk .bar { height: 5px; }
+.card.all .sum { margin-top: auto; }
+.proc-side .ps-gap { height: 10px; }
+.proc-side li.mf b { background: #0e7490; }
+.mfg-pg { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+.mfg-pg .bar { flex: 1; }
+.mfg-pg b { white-space: nowrap; font-size: 13px; }
+.stl-tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.stl-k { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; flex: none; }
+.ro-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; margin-bottom: 12px; align-items: start; }
+@media (max-width: 760px) { .ro-grid { grid-template-columns: 1fr; } }
+.ro-col { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--surface); }
+.ro-col .mh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ro-col .mh .btn { margin-left: auto; height: 28px; font-size: 12px; }
+.ro-pg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); font-weight: 700; }
+.ro-pg .bar { width: 70px; height: 6px; }
+.ro-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ro-steps li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
+.ro-steps li.cur { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+.ro-steps .nm { flex: 1; min-width: 0; font-weight: 600; }
+.ro-steps .nm small { display: block; font-weight: 500; color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ro-steps .nm small.issue { color: var(--st-fix); }

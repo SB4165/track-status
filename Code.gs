@@ -19,6 +19,17 @@ const NCR_SHEET_GID = 1615742909;
 const NCR_HEAD = [['no', 'NO'], ['done', '처리완료'], ['action', '조치사항'], ['date', '발생일'], ['due', '재납일'], ['project', '발주프로젝트'], ['item', '품명'], ['partNo', '품번'], ['vendor', '귀책업체'], ['defect', '불량(소분류)'], ['finder', '발견자'], ['owner', '담당자'], ['content', '불량내용'], ['note', '비고']];
 const NCR_FIELDS = ['action', 'date', 'due', 'project', 'item', 'partNo', 'qty', 'vendor', 'defect', 'finder', 'owner', 'content', 'note'];
 
+// 제조 (manufacturing) track: same row structure as Steps, stored in MfgSteps
+const MFG_STEPS = [
+  { no: 1, name: '자재입고',          file: false },
+  { no: 2, name: '로봇조립',          file: false },
+  { no: 3, name: '로봇배선',          file: false },
+  { no: 4, name: 'I/O CHECK',         file: false },
+  { no: 5, name: '제어프로그램 삽입', file: false },
+  { no: 6, name: '1차레벨(DRY)',      file: false },
+];
+const MFG_VERSION = '1'; // v1: MfgSteps created; projects whose quality work already started get 제조 = 완료
+
 const STATUSES = ['대기', '진행', '조치중', '완료', '보류', '생략'];
 const DONE_LIKE = ['완료', '생략'];
 
@@ -87,6 +98,7 @@ const SHEETS = {
   Notes:    ['id', 'content', 'updatedAt', 'updatedBy', 'style'],
   Measures: ['projectId', 'stepNo', 'x1', 'x2', 'updatedAt', 'updatedBy'],
   Checks:   ['projectId', 'stepNo', 'checks', 'updatedAt', 'updatedBy'],
+  MfgSteps: ['projectId', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'fileRequired', 'fileCount', 'fileCheckedAt', 'updatedAt', 'updatedBy'],
   History:  ['at', 'by', 'action', 'projectId', 'projectName', 'slot', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'detail'],
   SyncState: ['name', 'state', 'at', 'by'],
   Ncr:      ['no', 'done', 'action', 'date', 'due', 'project', 'item', 'partNo', 'qty', 'vendor', 'defect', 'finder', 'owner', 'content', 'note', 'syncedAt', 'updatedAt', 'updatedBy'],
@@ -95,7 +107,7 @@ const SHEETS = {
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', saveMfgStep: '제조 공정 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -301,7 +313,10 @@ function bootstrap_() {
     if (m) { s.x1 = String(m.x1 === undefined ? '' : m.x1); s.x2 = String(m.x2 === undefined ? '' : m.x2); }
     (byProj[s.projectId] = byProj[s.projectId] || []).push(s);
   });
+  const mfgBy = {};
+  if (getDb_().getSheetByName('MfgSteps')) readTable_('MfgSteps').forEach(s => { (mfgBy[s.projectId] = mfgBy[s.projectId] || []).push(s); });
   projects.forEach(p => {
+    p.mfg = (mfgBy[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => { delete s._row; delete s.projectId; s.stepNo = Number(s.stepNo); return s; });
     p.slot = p.slot === '' ? null : Number(p.slot);
     p.steps = (byProj[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => {
       delete s._row; delete s.projectId; s.stepNo = Number(s.stepNo); return s;
@@ -318,7 +333,7 @@ function bootstrap_() {
     return o;
   }) : [];
   const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty('NCR_SYNCED_AT') || '';
-  return { layout, projects, notes, keyRequired, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, statuses: STATUSES, serverTime: now_() };
+  return { layout, projects, notes, keyRequired, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: MFG_STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
@@ -430,6 +445,7 @@ function createProject_(b) {
   const rows = STEPS.map(s => [id, s.no, s.name, startDone_(s.no, start) ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']);
   const st = ss.getSheetByName('Steps');
   st.getRange(st.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  addMfgRows_([id], ship || start > 1);
   history_(b.user, 'create', { id: id, projectName: name, slot: slot }, null, (slot ? slot + '번 배치' : '미배치') + (ship ? ' / 출하완료로 등록' : start > 1 ? ' / ' + start + '번 공정부터 시작 (이전 공정 완료 처리)' : ''));
   return bootstrap_();
 }
@@ -455,7 +471,10 @@ function setSlot_(b) {
 }
 
 function saveStep_(b) {
-  const st = getDb_().getSheetByName('Steps');
+  const mfg = b.track === 'mfg';
+  const sheetName = mfg ? 'MfgSteps' : 'Steps';
+  if (mfg) mfgSheet_();
+  const st = getDb_().getSheetByName(sheetName);
   const row = findRow_(st, r => r[0] === b.projectId && Number(r[1]) === Number(b.stepNo));
   if (row < 0) throw new Error('공정을 찾을 수 없습니다.');
   if (b.status && STATUSES.indexOf(b.status) === -1) throw new Error('잘못된 상태값');
@@ -467,10 +486,10 @@ function saveStep_(b) {
   cur[h.indexOf('updatedAt')] = now_();
   cur[h.indexOf('updatedBy')] = b.user || '';
   st.getRange(row, 1, 1, h.length).setValues([cur]);
-  if (b.checks !== undefined && b.checks !== null) saveChecks_(b.projectId, Number(b.stepNo), String(b.checks), b.user);
+  if (!mfg && b.checks !== undefined && b.checks !== null) saveChecks_(b.projectId, Number(b.stepNo), String(b.checks), b.user);
   const prow = projectRow_(b.projectId);
   touchProject_(prow, b.user);
-  history_(b.user, 'saveStep', rowObj_('Projects', prow), rowObj_('Steps', row), '');
+  history_(b.user, mfg ? 'saveMfgStep' : 'saveStep', rowObj_('Projects', prow), rowObj_(sheetName, row), mfg ? '제조' : '');
   return bootstrap_();
 }
 
@@ -660,7 +679,7 @@ function syncProjects_(b) {
   const user = b.user || '';
   const t = now_();
   const base = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss');
-  const pRows = [], sRows = [], hRows = [], skipped = [];
+  const pRows = [], sRows = [], hRows = [], skipped = [], mfgNew = [], mfgDone = [];
   items.forEach((it, k) => {
     const name = String(it.name || '').trim();
     if (!name) return;
@@ -675,6 +694,7 @@ function syncProjects_(b) {
     const id = base + ('00' + k).slice(-3) + Math.floor(Math.random() * 90 + 10);
     pRows.push([id, String(slot), name, ship ? 'shipped' : 'active', '', '', t, user, t, user]);
     STEPS.forEach(s => sRows.push([id, s.no, s.name, startDone_(s.no, start) ? '완료' : '대기', '', '', '', '', '', s.file, '', '', '', '']));
+    (start > 1 || ship ? mfgDone : mfgNew).push(id);
     hRows.push(histArr_(user, 'sync', { id: id, projectName: name, slot: slot }, null,
       '참조 시트 동기화 · ' + (slot ? slot + '번 배치' : '미배치') + (start > 1 ? ' / ' + start + '번 공정부터 시작 (이전 공정 완료 처리)' : '') + note));
   });
@@ -683,6 +703,8 @@ function syncProjects_(b) {
     const st = ss.getSheetByName('Steps');
     st.getRange(st.getLastRow() + 1, 1, sRows.length, sRows[0].length).setValues(sRows);
     appendRowsText_(ss.getSheetByName('History'), hRows);
+    if (mfgNew.length) addMfgRows_(mfgNew, false);
+    if (mfgDone.length) addMfgRows_(mfgDone, true);
   }
   return Object.assign(bootstrap_(), { syncResult: { created: pRows.length, skipped: skipped } });
 }
@@ -811,16 +833,52 @@ function setNcrDone_(b) {
   return bootstrap_();
 }
 
+// ===== 제조 track (MfgSteps) =====
+function mfgSheet_() {
+  const ss = getDb_();
+  let sh = ss.getSheetByName('MfgSteps');
+  if (!sh) {
+    sh = ss.insertSheet('MfgSteps');
+    sh.getRange(1, 1, 1, SHEETS.MfgSteps.length).setValues([SHEETS.MfgSteps]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+// done=true: 제조 already finished (quality work started / shipped) -> all 완료
+function addMfgRows_(ids, done) {
+  if (!ids.length) return;
+  const sh = mfgSheet_();
+  const rows = [];
+  ids.forEach(id => MFG_STEPS.forEach(s => rows.push([id, String(s.no), s.name, done ? '완료' : '대기', '', '', '', '', '', String(s.file), '', '', '', ''])));
+  appendRowsText_(sh, rows);
+}
+function migrateMfg_() {
+  mfgSheet_();
+  const have = {};
+  readTable_('MfgSteps').forEach(r => { have[String(r.projectId)] = true; });
+  const started = {};
+  readTable_('Steps').forEach(s => { if (String(s.status) !== '대기') started[String(s.projectId)] = true; });
+  const done = [], fresh = [];
+  readTable_('Projects').filter(p => p.state === 'active' || p.state === 'shipped').forEach(p => {
+    const id = String(p.id); if (have[id]) return;
+    (p.state === 'shipped' || started[id] ? done : fresh).push(id);
+  });
+  addMfgRows_(done, true);
+  addMfgRows_(fresh, false);
+  history_('system', 'steps', null, null, '제조 공정 생성 (MFG_VERSION ' + MFG_VERSION + ', 완료 ' + done.length + ' / 대기 ' + fresh.length + ')');
+}
+
 // ===== Migrations (run once per version, lazily from doGet/doPost; sheets backed up first) =====
 function migrate_() {
   const props = PropertiesService.getScriptProperties();
-  if (props.getProperty('STEPS_VERSION') === STEPS_VERSION && props.getProperty('LAYOUT_VERSION') === LAYOUT_VERSION) return;
+  if (props.getProperty('STEPS_VERSION') === STEPS_VERSION && props.getProperty('LAYOUT_VERSION') === LAYOUT_VERSION && props.getProperty('MFG_VERSION') === MFG_VERSION) return;
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const stamp = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm');
     if (props.getProperty('STEPS_VERSION') !== STEPS_VERSION) { migrateSteps_(stamp, Number(props.getProperty('STEPS_VERSION') || 0)); props.setProperty('STEPS_VERSION', STEPS_VERSION); }
     if (props.getProperty('LAYOUT_VERSION') !== LAYOUT_VERSION) { migrateLayout_(stamp); props.setProperty('LAYOUT_VERSION', LAYOUT_VERSION); }
+    if (props.getProperty('MFG_VERSION') !== MFG_VERSION) { migrateMfg_(); props.setProperty('MFG_VERSION', MFG_VERSION); }
   } finally {
     lock.releaseLock();
   }
