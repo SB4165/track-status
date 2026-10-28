@@ -103,18 +103,19 @@
     const steps = p.steps || [];
     const isDone = s => s.status === '완료' || s.status === '생략';
     const skipped = steps.filter(s => s.status === '생략').length;
-    const done = steps.filter(isDone).length;
-    const total = steps.length || 14;
+    // 품질: 출하(마지막, 17번)는 공정 수·진척률에서 제외 (총 16단계로 표시; 패킹(서류 동봉) 완료 = 100%)
+    const shipLast = !p._mfg && steps.length > 1 && /출하/.test(String(steps[steps.length - 1].stepName || '')) && !/촬영/.test(String(steps[steps.length - 1].stepName || ''));
+    const countSteps = shipLast ? steps.slice(0, -1) : steps;
+    const done = countSteps.filter(isDone).length;
+    const total = countSteps.length || 14;
     const cur = steps.find(s => !isDone(s)) || null;
     // parallel group: every open step of the current step's group is "current"
     const defs = p._mfg ? mfgDefs() : undefined; // 제조 view uses the 제조 parallel groups
     const curGroup = cur && parOf(cur.stepNo, defs) ? steps.filter(s => !isDone(s) && parOf(s.stepNo, defs) === parOf(cur.stepNo, defs)) : (cur ? [cur] : []);
-    const curNo = cur ? Number(cur.stepNo) : total + 1;
+    const curNo = cur ? Number(cur.stepNo) : steps.length + 1;
     const fixing = steps.filter(s => s.status === '조치중');
     const openIssues = steps.filter(s => !isDone(s) && String(s.issue || '').trim());
-    // 품질: 패킹(서류 동봉) 완료 = 진척률 100% (출하 전까지 패킹 칸에 남음)
-    const packDone = !p._mfg && steps.length > 1 && steps.slice(0, -1).every(isDone);
-    const pct = packDone ? 100 : Math.round(done / total * 100);
+    const pct = Math.round(done / total * 100);
     // auto drafts (used when no manual summary is saved)
     // content only: current step's progress text; blank when nothing was entered
     const progFull = cur ? String(cur.progress || '').trim() : '';
@@ -127,7 +128,7 @@
     const manualIssue = String(p.summaryIssue || '').trim();
     const prog = manualProg || autoProg;
     const issue = manualIssue || autoIssue;
-    return { done, skipped, total, pct, cur, curGroup, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
+    return { countSteps, done, skipped, total, pct, cur, curGroup, curNo, fixing, hasIssue: fixing.length > 0 || !!issue, prog, issue, progTip: manualProg || progFull, issueTip: manualIssue || issueFull, autoProg, autoIssue, manualProg, manualIssue, curStatus: cur ? cur.status : '완료', packOk: curNo >= PACK_MIN_STEP };
   }
   // compress free text into a short summary: split numbered/line items, drop numbering and
   // non-numeric (…) notes, one item per line
@@ -374,7 +375,8 @@
       const cnt = {}; Object.values(boardMap()).forEach(p => { if (state.dash === 'all' && liveTrack(p) !== (qa ? 'qa' : 'mfg')) return; const c = info(p).cur; if (notStarted(c)) return;
         const k = parOf(c.stepNo, defs) ? groupStart(c.stepNo, defs) : c.stepNo; cnt[k] = (cnt[k] || 0) + 1; });
       const parPos = (s) => { if (!s.par) return ''; const g = defs.filter(x => x.par === s.par); return g.length < 2 ? '' : s.no === g[0].no ? 'par par-s' : s.no === g[g.length - 1].no ? 'par par-e' : 'par'; };
-      return `<div class="ps-h">${title} <span>${defs.length}단계</span></div><ol>${defs.map(s => `<li class="${qa && s.no >= PACK_MIN_STEP ? 'pk' : ''} ${qa ? '' : 'mf'} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em ${parPos(s) ? `style="--gn:${defs.filter(x => x.par === s.par).length}"` : ''} title="${parPos(s) ? '현재 이 병행 공정인 프로젝트 (합계)' : '현재 이 공정인 프로젝트'}">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol>`;
+      const nStep = qa && defs.length > 1 && /^출하$/.test(String(defs[defs.length - 1].name).trim()) ? defs.length - 1 : defs.length; // 출하 is not counted
+      return `<div class="ps-h">${title} <span>${nStep}단계</span></div><ol>${defs.map(s => `<li class="${qa && s.no >= PACK_MIN_STEP ? 'pk' : ''} ${qa ? '' : 'mf'} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em ${parPos(s) ? `style="--gn:${defs.filter(x => x.par === s.par).length}"` : ''} title="${parPos(s) ? '현재 이 병행 공정인 프로젝트 (합계)' : '현재 이 공정인 프로젝트'}">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol>`;
     };
     const qd = state.data.stepDefs || [];
     const qs = () => sec(qd, p => projectInfo(p), true, state.dash === 'all' ? '품질 공정' : '전체 공정');
@@ -420,7 +422,7 @@
       return `<button class="card empty ${pack ? 'pack' : ''}" data-slot="${slot}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack ? `${esc(slotName(slot))}<br><small>${PACK_MIN_STEP}번 공정 이상 배치</small>` : '+ 프로젝트 배치'}</span></button>`;
     }
     const i = projectInfo(p);
-    const segs = (p.steps || []).map(s => `<i class="s-${esc(s.status)}" title="${esc(s.stepNo + '. ' + s.stepName + ' · ' + s.status)}"></i>`).join('');
+    const segs = i.countSteps.map(s => `<i class="s-${esc(s.status)}" title="${esc(s.stepNo + '. ' + s.stepName + ' · ' + s.status)}"></i>`).join('');
     // parallel group: list started steps (or the first one); big groups get a short "+n" note
     const gShow = i.curGroup.length > 2 ? (i.curGroup.filter(s => s.status !== '대기').slice(0, 2).concat().length ? i.curGroup.filter(s => s.status !== '대기').slice(0, 2) : i.curGroup.slice(0, 1)) : i.curGroup;
     const gMore = i.curGroup.length - gShow.length;
@@ -729,17 +731,32 @@
     if (window.htmlToImage) return Promise.resolve();
     return loadH2I._p || (loadH2I._p = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = H2I_URL; sc.onload = res; sc.onerror = () => { loadH2I._p = null; rej(new Error('캡처 기능을 불러오지 못했습니다')); }; document.head.appendChild(sc); }));
   }
+  // Pretendard is split into ~90 unicode-range files: embed only the ones the browser already loaded
+  async function pageFontCSS() {
+    const link = [...document.styleSheets].find(s => s.href && /pretendard/i.test(s.href)); if (!link) return '';
+    const key = (ur) => String(ur || '').split(',')[0].trim().replace(/^U\+/i, '').split('-')[0].toLowerCase().replace(/^0+/, '');
+    const loaded = new Set([...document.fonts].filter(f => f.status === 'loaded' && /pretendard/i.test(f.family)).map(f => key(f.unicodeRange)));
+    const css = await fetch(link.href).then(r => r.text());
+    const b64 = (buf) => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+    const out = await Promise.all((css.match(/@font-face\s*{[^}]*}/g) || []).map(async b => {
+      const ur = (b.match(/unicode-range:\s*([^;}]+)/) || [])[1]; if (!ur || !loaded.has(key(ur))) return '';
+      const m = b.match(/url\(([^)]+)\)/); if (!m) return '';
+      const buf = await fetch(new URL(m[1].replace(/["']/g, ''), link.href).href).then(r => r.arrayBuffer());
+      return b.replace(/src:[^;}]+/, `src:url(data:font/woff2;base64,${b64(buf)}) format('woff2')`);
+    }));
+    return out.filter(Boolean).join('\n');
+  }
   async function boardBlob() {
     await loadH2I();
     const bg = getComputedStyle(document.body).backgroundColor || '#fff';
     const opt = { pixelRatio: 2, backgroundColor: bg, filter: n => !(n.classList && n.classList.contains('cap-skip')) };
-    if (!loadH2I._font) { try { loadH2I._font = await htmlToImage.getFontEmbedCSS(document.body); } catch (_) { loadH2I._font = ''; } }
+    if (!loadH2I._font) { try { loadH2I._font = await pageFontCSS(); } catch (_) { loadH2I._font = ''; } }
     opt.fontEmbedCSS = loadH2I._font;
     const plan = $('#plan'), side = $('#procSide');
     const pc = await htmlToImage.toCanvas(plan, opt);
     let sc = null;
     // the list is absolutely positioned left of the plan: render its clone in normal flow
-    if (side && !side.hidden) sc = await htmlToImage.toCanvas(side, Object.assign({}, opt, { width: side.offsetWidth, height: side.offsetHeight, style: { position: 'static', top: '0', right: 'auto', left: 'auto', margin: '0', transition: 'none' } }));
+    if (side && !side.hidden) sc = await htmlToImage.toCanvas(side, Object.assign({}, opt, { width: side.offsetWidth, height: side.scrollHeight, style: { position: 'static', top: '0', right: 'auto', left: 'auto', margin: '0', transition: 'none', overflow: 'visible', maxHeight: 'none' } }));
     const k = 2, pad = 16 * k, gap = 14 * k, headH = 34 * k;
     const W = pad * 2 + (sc ? sc.width + gap : 0) + pc.width, Hh = pad * 2 + headH + Math.max(pc.height, sc ? sc.height : 0);
     const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
@@ -898,7 +915,7 @@
         </div>` : ''}
         ${ncrBoxHTML(p)}
         <div class="row-end between" style="flex-wrap:wrap">
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo > i.total ? i.total : i.curNo)}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 완료 처리">이 공정부터 진행</button></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(Math.min(i.curNo, (p.steps || []).length))}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 완료 처리">이 공정부터 진행</button></div>
           <div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>
         </div>
         <div class="hint" style="margin-top:6px">자동 초안은 공정 기록이 바뀔 때마다 새로 작성됩니다. 내용을 고쳐 저장하면 '직접 작성'으로 고정됩니다.</div>
