@@ -112,7 +112,9 @@
     const curNo = cur ? Number(cur.stepNo) : total + 1;
     const fixing = steps.filter(s => s.status === '조치중');
     const openIssues = steps.filter(s => !isDone(s) && String(s.issue || '').trim());
-    const pct = Math.round(done / total * 100);
+    // 품질: 패킹(서류 동봉) 완료 = 진척률 100% (출하 전까지 패킹 칸에 남음)
+    const packDone = !p._mfg && steps.length > 1 && steps.slice(0, -1).every(isDone);
+    const pct = packDone ? 100 : Math.round(done / total * 100);
     // auto drafts (used when no manual summary is saved)
     // content only: current step's progress text; blank when nothing was entered
     const progFull = cur ? String(cur.progress || '').trim() : '';
