@@ -29,15 +29,15 @@ const STEPS = [
   { no: 4,  name: 'FAT 측정(진동)',          file: true, measure: true },
   { no: 5,  name: 'FAT 측정(반복정밀도)',    file: true, measure: true },
   { no: 6,  name: 'FAT 측정(AWC)',           file: true, measure: true },
-  { no: 7,  name: '반복Cycle 촬영',          file: true },
+  { no: 7,  name: '반복 Cycle 촬영',          file: true },
   { no: 8,  name: 'Full Cycle 촬영',         file: true },
   { no: 9,  name: 'X1/X2 핸드레벨 촬영',     file: true },
   { no: 10, name: '물방울 JIG 레벨 촬영',    file: true },
   { no: 11, name: '로봇 배선 해체(제조)',    file: false },
-  { no: 12, name: '패킹 서류 스캔 및 인쇄',  file: true,  par: 'A' }, // par: same key = parallel group (may run at the same time)
+  { no: 12, name: '패킹 서류 스캔 및 인쇄',  file: true,  par: 'A', checks: ['QC시트', 'IO시트'] }, // par: same key = parallel group; checks: confirmation boxes
   { no: 13, name: '클리닝(제조)',            file: false, par: 'A' },
-  { no: 14, name: '패킹리스트(영업) 확인',   file: false },
-  { no: 15, name: '출하사진 촬영',           file: true },
+  { no: 14, name: '패킹리스트(영업) 확인',   file: false, par: 'A' },
+  { no: 15, name: '출하사진 촬영',           file: true,  par: 'A' },
   { no: 16, name: '패킹(서류 동봉)',         file: false },
   { no: 17, name: '출하',                   file: false },
 ];
@@ -45,7 +45,8 @@ const STEPS = [
 //  v2: inserted 11 (로봇 배선 해체), added 출하완료 at the end
 //  v3: inserted 12 (클리닝)
 //  v4: step 17 renamed 출하완료 -> 출하
-const STEPS_VERSION = '5'; // v5: 패킹 서류 스캔 moved before 클리닝 (12·13 parallel group), 패킹리스트(영업) 확인 renamed
+//  v5: 패킹 서류 스캔 moved before 클리닝 (12·13 parallel group), 패킹리스트(영업) 확인 renamed
+const STEPS_VERSION = '6'; // v6: step 7 renamed 반복Cycle 촬영 -> 반복 Cycle 촬영 (names refreshed by migration); 12~15 parallel (no renumbering)
 
 // Floor plan on a 1000-wide canvas (height = lowest item + margin) (same orientation as the CAD drawing).
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
@@ -76,7 +77,7 @@ const DEFAULT_LAYOUT = [
   ['pack-7',    'pack',    15, '패킹 7',                 540, 433, 140, 190, true],
   ['pack-8',    'pack',    16, '패킹 8',                 688, 433, 140, 190, true],
   ['note-1',    'note',    '', '기타사항',               840, 235, 152, 190, true],
-  ['spec-1',    'spec',    '', 'TRACK IMMERSION robot specification', 840, 433, 152, 190, true],
+  ['spec-1',    'spec',    '', 'TRACK Robot Specification', 840, 433, 152, 190, true],
 ];
 
 const SHEETS = {
@@ -85,6 +86,7 @@ const SHEETS = {
   Steps:    ['projectId', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'fileRequired', 'fileCount', 'fileCheckedAt', 'updatedAt', 'updatedBy'],
   Notes:    ['id', 'content', 'updatedAt', 'updatedBy', 'style'],
   Measures: ['projectId', 'stepNo', 'x1', 'x2', 'updatedAt', 'updatedBy'],
+  Checks:   ['projectId', 'stepNo', 'checks', 'updatedAt', 'updatedBy'],
   History:  ['at', 'by', 'action', 'projectId', 'projectName', 'slot', 'stepNo', 'stepName', 'status', 'startDate', 'endDate', 'owner', 'progress', 'issue', 'detail'],
   SyncState: ['name', 'state', 'at', 'by'],
   Ncr:      ['no', 'done', 'action', 'date', 'due', 'project', 'item', 'partNo', 'qty', 'vendor', 'defect', 'finder', 'owner', 'content', 'note', 'syncedAt', 'updatedAt', 'updatedBy'],
@@ -291,8 +293,11 @@ function bootstrap_() {
   const byProj = {};
   const meas = {};
   if (getDb_().getSheetByName('Measures')) readTable_('Measures').forEach(m => { meas[m.projectId + '|' + Number(m.stepNo)] = m; });
+  const chk = {};
+  if (getDb_().getSheetByName('Checks')) readTable_('Checks').forEach(c => { chk[c.projectId + '|' + Number(c.stepNo)] = String(c.checks || ''); });
   readTable_('Steps').forEach(s => {
     const m = meas[s.projectId + '|' + Number(s.stepNo)];
+    const ck = chk[s.projectId + '|' + Number(s.stepNo)]; if (ck !== undefined) s.checks = ck;
     if (m) { s.x1 = String(m.x1 === undefined ? '' : m.x1); s.x2 = String(m.x2 === undefined ? '' : m.x2); }
     (byProj[s.projectId] = byProj[s.projectId] || []).push(s);
   });
@@ -462,10 +467,22 @@ function saveStep_(b) {
   cur[h.indexOf('updatedAt')] = now_();
   cur[h.indexOf('updatedBy')] = b.user || '';
   st.getRange(row, 1, 1, h.length).setValues([cur]);
+  if (b.checks !== undefined && b.checks !== null) saveChecks_(b.projectId, Number(b.stepNo), String(b.checks), b.user);
   const prow = projectRow_(b.projectId);
   touchProject_(prow, b.user);
   history_(b.user, 'saveStep', rowObj_('Projects', prow), rowObj_('Steps', row), '');
   return bootstrap_();
+}
+
+// confirmation checkboxes per step (e.g. 12 패킹 서류: QC시트, IO시트) — Checks sheet, comma-joined keys
+function saveChecks_(pid, no, checks, user) {
+  const ss = getDb_();
+  let sh = ss.getSheetByName('Checks');
+  if (!sh) { sh = ss.insertSheet('Checks'); sh.getRange(1, 1, 1, SHEETS.Checks.length).setValues([SHEETS.Checks]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  const t = now_();
+  const r = readTable_('Checks').find(x => String(x.projectId) === String(pid) && Number(x.stepNo) === no);
+  if (r) sh.getRange(r._row, 3, 1, 3).setNumberFormat('@').setValues([[checks, t, user || '']]);
+  else appendRowsText_(sh, [[pid, String(no), checks, t, user || '']]);
 }
 
 // FAT measurement values (X1/X2) per project step — Measures sheet (created on first save)

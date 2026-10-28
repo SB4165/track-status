@@ -117,12 +117,36 @@
   // compress free text into a short summary: split numbered/line items, drop numbering and
   // non-numeric (…) notes, one item per line
   // put each numbered item ('2. ', '3) ') on its own line
+  // **bold** markup (Ctrl+B in 진행사항/이슈사항) — stored as plain text, rendered as <b>
+  const MD_B = /\*\*([^*\n]+?)\*\*/g;
+  const mdView = (t) => esc(t).replace(MD_B, '<b>$1</b>');
+  const stripMd = (t) => String(t ?? '').replace(MD_B, '$1');
+  const md2html = (t) => mdView(t).replace(/\n/g, '<br>');
+  function html2md(root) {
+    let out = '';
+    const walk = (n, bold) => {
+      if (n.nodeType === 3) { out += bold ? n.nodeValue.split('\n').map(l => (l ? '\u0001' + l + '\u0002' : l)).join('\n') : n.nodeValue; return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName;
+      if (tag === 'BR') { out += '\n'; return; }
+      const block = tag === 'DIV' || tag === 'P';
+      if (block && out && !out.endsWith('\n')) out += '\n';
+      const fw = n.style && n.style.fontWeight;
+      const b = bold || tag === 'B' || tag === 'STRONG' || fw === 'bold' || Number(fw) >= 600;
+      n.childNodes.forEach(c => walk(c, b));
+      if (block && n.nextSibling && !out.endsWith('\n')) out += '\n';
+    };
+    root.childNodes.forEach(c => walk(c, false));
+    // merge adjacent bold runs, then turn markers into ** (skip whitespace-only runs)
+    return out.replace(/\u0002\u0001/g, '').replace(/\u0001(\s*)([^\u0002]*?)(\s*)\u0002/g, (m, a, x, z) => (x ? `${a}**${x}**${z}` : a + z)).replace(/\u00a0/g, ' ').replace(/\n+$/, '');
+  }
+  const fieldVal = (el) => (el && el.isContentEditable ? html2md(el) : (el ? el.value : ''));
   const lineBreaks = (t) => String(t || '').replace(/[ \t]+(?=\d{1,2}[.)]\s+\S)/g, '\n').trim();
   function summarize(text) {
     const t = String(text || '').replace(/\r/g, '').trim();
     if (!t) return '';
     const items = t.split(/\n+|\s*\/\s+|(?:^|\s)(?=\d{1,2}[.)]\s*\S)/)
-      .map(x => x.replace(/^\s*\d{1,2}[.)]\s*/, '').replace(/^[-·•*]\s*/, '')
+      .map(x => x.replace(/^\s*\d{1,2}[.)]\s*/, '').replace(/^(?:[-·•]|\*(?!\*))\s*/, '')
         .replace(/\s*[(（][^()（）]*[)）]/g, m => (/\d/.test(m) ? m : ''))
         .replace(/\s+/g, ' ').replace(/[\s,.;:]+$/, '').trim())
       .filter(Boolean);
@@ -322,9 +346,10 @@
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
     const defs = state.data.stepDefs || [];
     // parallel group = one combined count (shown on the group's first step)
-    const cnt = {}; activeProjects().forEach(p => { const c = projectInfo(p).cur; if (!c) return; const k = parOf(c.stepNo) ? groupStart(c.stepNo) : c.stepNo; cnt[k] = (cnt[k] || 0) + 1; });
+    const cnt = {}; Object.values(bySlot()).forEach(p => { const c = projectInfo(p).cur; if (!c || (Number(c.stepNo) === 1 && c.status === '대기')) return; // placed + started projects only
+      const k = parOf(c.stepNo) ? groupStart(c.stepNo) : c.stepNo; cnt[k] = (cnt[k] || 0) + 1; });
     const parPos = (s) => { if (!s.par) return ''; const g = defs.filter(x => x.par === s.par); return g.length < 2 ? '' : s.no === g[0].no ? 'par par-s' : s.no === g[g.length - 1].no ? 'par par-e' : 'par'; };
-    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em title="${parPos(s) ? '현재 이 병행 공정인 프로젝트 (합계)' : '현재 이 공정인 프로젝트'}">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><div class="ps-l"><em>n</em><span>현재 진행 프로젝트 수</span></div>${defs.some(s => s.par) ? '<div class="ps-l"><i class="parbar"></i><span>병행 공정</span></div>' : ''}</div>`;
+    side.innerHTML = `<div class="ps-h">전체 공정 <span>${(state.data.stepDefs || []).length}단계</span></div><ol>${(state.data.stepDefs || []).map(s => `<li class="${s.no >= PACK_MIN_STEP ? 'pk' : ''} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em ${parPos(s) ? `style="--gn:${defs.filter(x => x.par === s.par).length}"` : ''} title="${parPos(s) ? '현재 이 병행 공정인 프로젝트 (합계)' : '현재 이 공정인 프로젝트'}">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol><div class="ps-f"><div class="ps-l"><em>n</em><span>배치·착수된 프로젝트 수 (현재 공정)</span></div>${defs.some(s => s.par) ? '<div class="ps-l"><i class="parbar"></i><span>병행 공정</span></div>' : ''}</div>`;
     // parallel-group names stay on one line: shrink the font until they fit
     side.querySelectorAll('li.par .nm').forEach(n => { let f = parseFloat(getComputedStyle(n).fontSize); n.style.fontSize = ''; f = parseFloat(getComputedStyle(n).fontSize); while (n.scrollWidth > n.clientWidth + 0.5 && f > 8) { f -= 0.5; n.style.fontSize = f + 'px'; } });
     followProcSide();
@@ -361,8 +386,11 @@
     }
     const i = projectInfo(p);
     const segs = (p.steps || []).map(s => `<i class="s-${esc(s.status)}" title="${esc(s.stepNo + '. ' + s.stepName + ' · ' + s.status)}"></i>`).join('');
+    // parallel group: list started steps (or the first one); big groups get a short "+n" note
+    const gShow = i.curGroup.length > 2 ? (i.curGroup.filter(s => s.status !== '대기').slice(0, 2).concat().length ? i.curGroup.filter(s => s.status !== '대기').slice(0, 2) : i.curGroup.slice(0, 1)) : i.curGroup;
+    const gMore = i.curGroup.length - gShow.length;
     const curHtml = i.cur
-      ? i.curGroup.map(s => `<div class="step ${i.curGroup.length > 1 ? 'g' : ''}"><b>${s.stepNo}. ${esc(s.stepName)}</b>${pill(s.status)}</div>`).join('')
+      ? gShow.map(s => `<div class="step ${i.curGroup.length > 1 ? 'g' : ''}"><b>${s.stepNo}. ${esc(s.stepName)}</b>${pill(s.status)}</div>`).join('') + (gMore > 0 ? `<div class="gmore" title="${esc(i.curGroup.map(s => `${s.stepNo}. ${s.stepName} (${s.status})`).join('\n'))}">병행 공정 ${gMore}개 더</div>` : '')
       : `<div class="step"><b>전 공정 완료</b>${pill('완료')}</div>`;
     return `<button class="card ${pack ? 'pack' : ''} ${i.hasIssue ? 'has-issue' : ''}" draggable="true" data-pid="${esc(p.id)}" data-st="${esc(i.curStatus)}" title="${esc(p.projectName)}">
       ${typesHTML(slot)}
@@ -371,8 +399,8 @@
       <div class="segs">${segs}</div>
       <div class="pct">${i.done}/${i.total} 완료 · ${i.pct}%</div>
       <div class="sum">
-        <div class="row" title="${esc(i.progTip)}"><span class="t">진행</span><span class="v">${esc(lineBreaks(i.prog))}</span></div>
-        <div class="row ${i.issue ? 'issue' : ''}" title="${esc(i.issueTip)}"><span class="t">이슈</span><span class="v">${i.issue ? esc(lineBreaks(i.issue)) : '<span class="muted">없음</span>'}</span></div>
+        <div class="row" title="${esc(stripMd(i.progTip))}"><span class="t">진행</span><span class="v">${mdView(lineBreaks(i.prog))}</span></div>
+        <div class="row ${i.issue ? 'issue' : ''}" title="${esc(stripMd(i.issueTip))}"><span class="t">이슈</span><span class="v">${i.issue ? mdView(lineBreaks(i.issue)) : '<span class="muted">없음</span>'}</span></div>
       </div>
     </button>`;
   }
@@ -419,7 +447,7 @@
 
   // robot specification table (layout type 'spec')
   const SPEC = [
-    ['Wafer', '(Warpage, Thickness, Type etc.)', '0.775mm Si wafer\n· max warpage: 0.5mm\n· 1mm warpage in the future\n0.5-1.2mm glass wafer\n· max warpage: 0.5mm'],
+    ['Wafer', '(Warpage, Thickness, Type etc.)', '0.775mm Si wafer, max warpage : 0.5mm\n1mm warpage in the future 0.5-1.2mm glass wafer, max warpage: 0.5mm'],
     ['Vibration', '', '≤ 0.3mm (end effector)'],
     ['Repeatablity + AWC', '', 'MPR ≤ 0.1mm\nMPR 외 ≤ 0.15mm', true],
     ['Noise', '', 'SEMI standard'],
@@ -428,7 +456,7 @@
     ['WPH', '', 'more than 300WPH'],
   ];
   function specHTML(it) {
-    return `<div class="spec"><div class="spec-h">${esc(it.label || 'TRACK IMMERSION robot specification')}</div>
+    return `<div class="spec"><div class="spec-h">${esc('TRACK Robot Specification')}</div>
       <table><thead><tr><th>NO</th><th>Item</th><th>Specification</th></tr></thead><tbody>${SPEC.map((r, k) => `<tr class="${r[3] ? 'hl' : ''}"><td class="sn">${k + 1}</td><td class="it">${esc(r[0])}${r[1] ? `<small>${esc(r[1])}</small>` : ''}</td><td class="sp">${esc(r[2])}</td></tr>`).join('')}</tbody></table></div>`;
   }
   // note text style: 'size|weight' (size s/m/l/xl, weight n/b)
@@ -568,7 +596,7 @@
         <div class="nm">${esc(p.projectName)}<small>${esc(groupOf(p.projectName))} · 등록 ${esc(String(p.createdAt || '').slice(0, 10))}${p.createdBy ? ' · ' + esc(p.createdBy) : ''}</small></div>
         <div class="cs">${cs}</div>
         <div class="pg"><div class="bar"><i style="width:${i.pct}%"></i></div><span>${i.done}/${i.total} · ${i.pct}%</span></div>
-        <div class="is ${i.issue ? '' : 'none'}" title="${esc(i.issueTip)}">${i.issue ? esc(lineBreaks(i.issue)) : '이슈 없음'}</div>
+        <div class="is ${i.issue ? '' : 'none'}" title="${esc(stripMd(i.issueTip))}">${i.issue ? mdView(lineBreaks(i.issue)) : '이슈 없음'}</div>
         <div class="dt">${esc(p.updatedAt || '')}</div>
         <div class="act">
           <button class="ib" data-edit="${esc(p.id)}" title="프로젝트명 수정" aria-label="수정"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button>
@@ -602,7 +630,7 @@
         <span class="stl-s">${esc(slotName(p.slot))}</span>
         <span class="stl-m"><b>${esc(p.projectName)}</b><span class="stl-c">${cur}</span>
           <span class="stl-p"><span class="bar"><i style="width:${i.pct}%"></i></span>${i.done}/${i.total} · ${i.pct}%</span>
-          ${extra ? `<span class="stl-x ${key === 'fixing' || key === 'issue' ? 'warn' : ''}"><em>${lbl}</em>${esc(lineBreaks(extra))}</span>` : ''}</span>
+          ${extra ? `<span class="stl-x ${key === 'fixing' || key === 'issue' ? 'warn' : ''}"><em>${lbl}</em>${mdView(lineBreaks(extra))}</span>` : ''}</span>
         <span class="stl-go">›</span></button>`;
     }).join('')}</div>` : '<div class="empty-msg">해당하는 프로젝트가 없습니다.</div>';
     openModal(false);
@@ -668,6 +696,10 @@
       <div class="nb-chips">${keys.length > 1 ? `<button class="nb-chip ${!NX.defect ? 'on' : ''}" data-nxd="">전체 <b>${rows.length}</b></button>` : ''}${keys.map(k => `<button class="nb-chip ${NX.defect === k ? 'on' : ''}" data-nxd="${esc(k)}" title="${esc(k)} ${g[k].n}건 (미처리 ${g[k].o})">${esc(k)} <b>${g[k].n}</b>${g[k].o ? `<em>미처리 ${g[k].o}</em>` : ''}</button>`).join('')}</div>${detail}</div>`;
   }
   function refreshNcrBox() { const p = findProject(state.openProjectId); const box = $('#mBody .ncrbox'); if (p && box) box.outerHTML = ncrBoxHTML(p); }
+  // per-step confirmation checkboxes (stepDefs[].checks) — value stored as comma-joined keys
+  const stepChecks = (no) => (((state.data && state.data.stepDefs) || [])[Number(no) - 1] || {}).checks || [];
+  const ckSet = (s) => new Set(String((s && s.checks) || '').split(',').map(x => x.trim()).filter(Boolean));
+  const ckVal = (el) => { const r = el.querySelector('[data-checks]'); return r ? [...r.querySelectorAll('input:checked')].map(x => x.value).join(',') : undefined; };
   function renderProject(p, keepScroll) {
     const body = $('#mBody');
     const scroll = keepScroll ? body.scrollTop : 0;
@@ -683,13 +715,14 @@
       const isFile = s.fileRequired === true || String(s.fileRequired).toUpperCase() === 'TRUE';
       const open = state.openStep === no;
       const sub = String(s.issue || '').trim() && s.status !== '완료'
-        ? `<small class="issue">이슈: ${esc(s.issue)}</small>`
-        : (String(s.progress || '').trim() ? `<small>${esc(s.progress)}</small>` : '');
+        ? `<small class="issue">이슈: ${mdView(s.issue)}</small>`
+        : (String(s.progress || '').trim() ? `<small>${mdView(s.progress)}</small>` : '');
       return `<div class="st ${open ? 'open' : ''} ${i.curGroup.some(s => Number(s.stepNo) === no) ? 'cur-step' : ''}" data-step="${no}">
         <button class="st-h" data-toggle="${no}">
           <span class="st-n">${no}</span>
           <span class="st-name">${esc(s.stepName)}${sub}</span>
           ${isFile ? '<span class="fbadge">파일확인</span>' : ''}
+          ${stepChecks(no).length ? `<span class="ckbadge ${stepChecks(no).every(k => ckSet(s).has(k)) ? 'ok' : ''}">${stepChecks(no).map(k => `${esc(k.replace(/시트$/, ''))}${ckSet(s).has(k) ? '✓' : '·'}`).join(' ')}</span>` : ''}
           ${pill(s.status)}
           <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </button>
@@ -701,8 +734,9 @@
             <label class="f">담당자<input type="text" name="owner" value="${esc(s.owner)}" placeholder="이름"></label>
           </div>
           ${isMeasure(no) ? `<div class="meas-row"><span class="hint">측정값</span>${measInputs(no, s)}</div>` : ''}
-          <label class="f">세부 진행사항<textarea name="progress" rows="3" placeholder="진행 내용을 입력하세요">${esc(s.progress)}</textarea></label>
-          <label class="f">이슈사항<textarea name="issue" rows="2" placeholder="이슈가 있으면 입력하세요">${esc(s.issue)}</textarea></label>
+          ${stepChecks(no).length ? `<div class="chk-row" data-checks="1"><span class="hint">확인</span>${stepChecks(no).map(k => `<label class="chk"><input type="checkbox" value="${esc(k)}" ${ckSet(s).has(k) ? 'checked' : ''}> ${esc(k)} 확인</label>`).join('')}</div>` : ''}
+          <div class="f"><span>세부 진행사항 <span class="rt-hint">Ctrl+B 굵게</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="세부 진행사항" name="progress" data-ph="진행 내용을 입력하세요">${md2html(s.progress)}</div></div>
+          <div class="f"><span>이슈사항 <span class="rt-hint">Ctrl+B 굵게</span></span><div class="in rta r2" contenteditable="true" role="textbox" aria-multiline="true" aria-label="이슈사항" name="issue" data-ph="이슈가 있으면 입력하세요">${md2html(s.issue)}</div></div>
           ${isFile ? `<div class="filecheck"><span>NAS 폴더 파일 업로드 확인 <b>자동화 예정</b></span><span class="meta">${s.fileCheckedAt ? '확인 ' + esc(s.fileCheckedAt) + ' · ' + esc(s.fileCount) + '개' : '미연동'}</span></div>` : ''}
           <div class="row-end between">
             <span class="meta">${s.updatedAt ? '수정 ' + esc(s.updatedAt) + (s.updatedBy ? ' · ' + esc(s.updatedBy) : '') : ''}</span>
@@ -716,8 +750,8 @@
       <div class="box">
         <div class="grid3 sumgrid">
           <label class="f">배치${active ? `<select class="in" id="mSlotSel">${slotOptions(p.slot, p)}</select>` : `<input type="text" value="출하완료" disabled>`}</label>
-          <label class="f"><span>진행사항 요약 <span class="autotag ${i.manualProg ? 'man' : ''}">${i.manualProg ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumProg" rows="3" data-auto="${esc(i.autoProg)}">${esc(i.prog)}</textarea></label>
-          <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><textarea id="sumIssue" rows="3" placeholder="이슈 없음" data-auto="${esc(i.autoIssue)}">${esc(i.issue)}</textarea></label>
+          <label class="f"><span>진행사항 요약 <span class="autotag ${i.manualProg ? 'man' : ''}">${i.manualProg ? '직접 작성' : '자동 초안'}</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="진행사항 요약" id="sumProg" data-auto="${esc(i.autoProg)}" data-ph="진행 요약">${md2html(i.prog)}</div></label>
+          <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="이슈사항 요약" id="sumIssue" data-ph="이슈 없음" data-auto="${esc(i.autoIssue)}">${md2html(i.issue)}</div></label>
         </div>
         ${measDefs().length ? `<div class="measbox">
           <div class="mh"><b>FAT 측정값</b><span class="hint">X1 · X2 직접 입력 가능 — 입력값은 각 공정의 측정값으로 함께 기록됩니다</span><button class="btn" id="saveMeas">측정값 저장</button></div>
@@ -882,20 +916,20 @@
         const sheet1 = ps.map(p => { const i = projectInfo(p); return {
           '배치': p.slot ? slotName(p.slot) : '', '프로젝트명': p.projectName, '상태': p.state === 'active' ? '진행중' : '출하완료',
           '현재 공정': i.cur ? i.curGroup.map(s => `${s.stepNo}. ${s.stepName}`).join(' + ') : '전 공정 완료', '현재 공정 상태': i.curStatus,
-          '완료 공정': `${i.done}/${i.total}`, '진척률(%)': i.pct, '진행 요약': i.prog, '이슈 요약': i.issue,
+          '완료 공정': `${i.done}/${i.total}`, '진척률(%)': i.pct, '진행 요약': stripMd(i.prog), '이슈 요약': stripMd(i.issue),
           '등록일': p.createdAt, '등록자': p.createdBy, '최종 수정': p.updatedAt, '수정자': p.updatedBy,
         }; });
         const sheet2 = [];
         ps.forEach(p => (p.steps || []).forEach(s => sheet2.push({
           '프로젝트명': p.projectName, '배치': p.slot ? slotName(p.slot) : '', '공정 번호': s.stepNo, '공정명': s.stepName, '상태': s.status,
-          '시작일': s.startDate, '완료일': s.endDate, '담당자': s.owner, '세부 진행사항': s.progress, '이슈사항': s.issue,
+          '시작일': s.startDate, '완료일': s.endDate, '담당자': s.owner, '세부 진행사항': stripMd(s.progress), '이슈사항': stripMd(s.issue),
           '파일확인 대상': (s.fileRequired === true || String(s.fileRequired).toUpperCase() === 'TRUE') ? 'O' : '',
           '최종 수정': s.updatedAt, '수정자': s.updatedBy,
         })));
         const sheet3 = (hist.rows || []).filter(r => !r.projectId || ids.has(r.projectId) || pid === r.projectId).map(r => ({
           '일시': r.at, '작성자': r.by, '구분': r.actionLabel || r.action, '프로젝트명': r.projectName, '배치': r.slot ? slotName(r.slot) : '',
           '공정 번호': r.stepNo, '공정명': r.stepName, '상태': r.status, '시작일': r.startDate, '완료일': r.endDate,
-          '담당자': r.owner, '세부 진행사항': r.progress, '이슈사항': r.issue, '비고': r.detail,
+          '담당자': r.owner, '세부 진행사항': stripMd(r.progress), '이슈사항': stripMd(r.issue), '비고': r.detail,
         }));
         const wb = XLSX.utils.book_new();
         const add = (rows, name, widths) => {
@@ -1285,7 +1319,7 @@
     if (needKey()) { askKey().then(ok => { if (ok) saveAll(); }); return; }
     const pid = state.openProjectId; const p = findProject(pid); if (!p) return;
     const jobs = [];
-    const keep = (el) => { const v = el.value.trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
+    const keep = (el) => { const v = fieldVal(el).trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
     const sp = keep($('#sumProg')), si = keep($('#sumIssue'));
     if (sp !== String(p.summaryProgress || '').trim() || si !== String(p.summaryIssue || '').trim()) {
       jobs.push(() => mutate({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, null, d => {
@@ -1294,9 +1328,10 @@
     }
     $$('#mBody .st[data-step]').forEach(el => {
       const no = Number(el.dataset.step); const s = (p.steps || []).find(x => Number(x.stepNo) === no); if (!s) return;
-      const v = n => el.querySelector(`[name=${n}]`).value;
+      const v = n => fieldVal(el.querySelector(`[name=${n}]`));
       const on = el.querySelector('.seg-ctl button.on');
       const f = { status: on ? on.dataset.v : s.status, startDate: v('startDate'), endDate: v('endDate'), owner: v('owner'), progress: v('progress'), issue: v('issue') };
+      const ck = ckVal(el); if (ck !== undefined) f.checks = ck;
       if (!Object.keys(f).some(k => String(f[k] || '').trim() !== String(s[k] || '').trim())) return;
       jobs.push(() => mutate(Object.assign({ action: 'saveStep', projectId: pid, stepNo: no }, f), null, (d, user) => {
         const x = byId(d, pid); if (!x) return;
@@ -1314,6 +1349,13 @@
   const FS_OK = window.CSS && CSS.supports && CSS.supports('field-sizing', 'content');
   const autoGrow = (ta) => { if (FS_OK || !ta || !ta.offsetParent) return; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, Math.round(window.innerHeight * 0.6)) + 'px'; };
   $('#mBody').addEventListener('input', e => { if (e.target.tagName === 'TEXTAREA') autoGrow(e.target); });
+  // rich fields: paste as plain text; Ctrl+B is the browser's own bold toggle in contenteditable
+  $('#mBody').addEventListener('paste', e => { const t = e.target.closest && e.target.closest('.rta'); if (!t) return; e.preventDefault(); const txt = (e.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, txt); });
+  $('#mBody').addEventListener('keydown', e => {
+    const t = e.target.closest && e.target.closest('.rta'); if (!t) return;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); document.execCommand('bold'); }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I' || e.key === 'u' || e.key === 'U')) e.preventDefault(); // only bold is kept
+  });
   $('#mBody').addEventListener('focusin', e => { if (e.target.tagName === 'TEXTAREA') autoGrow(e.target); });
   $('#mBody').addEventListener('click', e => {
     const so = e.target.closest('.stl-r[data-open]');
@@ -1350,9 +1392,10 @@
     const save = t.closest('[data-save]');
     if (save) {
       const no = Number(save.dataset.save); const el = save.closest('.st');
-      const v = n => el.querySelector(`[name=${n}]`).value;
+      const v = n => fieldVal(el.querySelector(`[name=${n}]`));
       const on = el.querySelector('.seg-ctl button.on');
       const f = { status: on ? on.dataset.v : '대기', startDate: v('startDate'), endDate: v('endDate'), owner: v('owner'), progress: v('progress'), issue: v('issue') };
+      const ck = ckVal(el); if (ck !== undefined) f.checks = ck;
       const pid = state.openProjectId;
       const mi = isMeasure(no) ? measChanges(findProject(pid), no) : [];
       mutate(Object.assign({ action: 'saveStep', projectId: pid, stepNo: no }, f), '저장되었습니다', (d, user) => {
@@ -1373,7 +1416,7 @@
     }
     if (id === 'saveSum') {
       // unchanged auto draft -> keep it automatic (store empty)
-      const keep = (el) => { const v = el.value.trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
+      const keep = (el) => { const v = fieldVal(el).trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
       const sp = keep($('#sumProg')), si = keep($('#sumIssue'));
       mutate({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, '요약이 저장되었습니다', d => {
         const p = byId(d, pid); if (p) { p.summaryProgress = sp; p.summaryIssue = si; }
@@ -1426,7 +1469,7 @@
 
   // ===================== Demo backend =====================
   const Demo = (() => {
-    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹 서류 스캔 및 인쇄', '클리닝(제조)', '패킹리스트(영업) 확인', '출하사진 촬영', '패킹(서류 동봉)', '출하'];
+    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복 Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹 서류 스캔 및 인쇄', '클리닝(제조)', '패킹리스트(영업) 확인', '출하사진 촬영', '패킹(서류 동봉)', '출하'];
     const FILE = [4, 5, 6, 7, 8, 9, 10, 12, 15];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
     const layout = [
@@ -1435,7 +1478,7 @@
       L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 185), L('slot-1', 'slot', 1, 'MPR', 40, 426, 192, 185),
       L('door-1', 'door', null, '출입문', 40, 617, 192, 20),
       ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 244 + (i % 4) * 148, i < 4 ? 235 : 433, 140, 190)),
-      L('note-1', 'note', null, '기타사항', 840, 235, 152, 190), L('spec-1', 'spec', null, 'TRACK IMMERSION robot specification', 840, 433, 152, 190),
+      L('note-1', 'note', null, '기타사항', 840, 235, 152, 190), L('spec-1', 'spec', null, 'TRACK Robot Specification', 840, 433, 152, 190),
     ];
     const notes = { 'note-1': { content: '10/24(금) 클린룸 정기 점검 예정\n메인 전기 차단기 위치 이동 작업 대기', updatedAt: '2026-10-21 09:00', updatedBy: '곽승범' } };
     const names = ['RD-SH-13-013 EMR#1', 'RD-SH-13-013 ESR#2', 'RD-SH-13-013 ESR#3', 'RD-SH-13-013 FER#0', 'RD-SH-13-013 MPR#4', 'RD-SH-13-013 MPR#5', 'RD-SH-13-013 MPR#6', 'MISC-STR10 #1', 'MISC-STR11 #1', 'MISC-FER0 #1', 'MISC-MPR7 #1', 'MISC-MPR9 #1'];
@@ -1467,7 +1510,7 @@
       NR(2902, false, '', '08/11', 'ECP352', 'MAGNET', 'B-05-002', 1, '기구', '외관손상', '최진혁', '김나현', '대상 외 프로젝트(필터됨)'),
     ];
     const ncr = []; let ncrAt = '';
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13].includes(i + 1) ? 'A' : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13, 14, 15].includes(i + 1) ? 'A' : undefined, checks: i === 11 ? ['QC시트', 'IO시트'] : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));
@@ -1526,7 +1569,7 @@
         if (b.action === 'updateProject' && p) { log(b, '프로젝트명 수정', p, null, p.projectName + ' → ' + b.projectName); p.projectName = b.projectName; }
         if (b.action === 'saveStep' && p) {
           const s = p.steps.find(x => x.stepNo === b.stepNo);
-          ['status', 'startDate', 'endDate', 'owner', 'progress', 'issue'].forEach(k => (s[k] = b[k])); s.updatedAt = now(); s.updatedBy = b.user;
+          ['status', 'startDate', 'endDate', 'owner', 'progress', 'issue'].forEach(k => (s[k] = b[k])); if (b.checks !== undefined) s.checks = b.checks; s.updatedAt = now(); s.updatedBy = b.user;
           log(b, '공정 저장', p, s);
         }
         if (b.action === 'saveMeasure' && p) { (b.items || []).forEach(it => { const s = p.steps.find(x => x.stepNo === Number(it.stepNo)); if (s) { s.x1 = it.x1; s.x2 = it.x2; } }); log(b, 'measure', p, null, JSON.stringify(b.items)); }

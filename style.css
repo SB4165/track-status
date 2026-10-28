@@ -833,3 +833,25 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 #mBody textarea { field-sizing: content; max-height: 60vh; overflow-y: auto; }
 #mBody textarea[rows="2"] { min-height: calc(2lh + 18px); }
 #mBody textarea[rows="3"] { min-height: calc(3lh + 18px); }
+
+/* rich text (bold only) fields in the project modal */
+.rta { white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; max-height: 60vh; line-height: 1.45; padding: 8px 10px; cursor: text; height: auto; }
+.rta.r2 { min-height: calc(2 * 1.45em + 18px); } .rta.r3 { min-height: calc(3 * 1.45em + 18px); }
+.rta:empty::before { content: attr(data-ph); color: var(--text-3); pointer-events: none; }
+.rta:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.rta b, .rta strong { font-weight: 800; }
+.rt-hint { font-size: 10.5px; font-weight: 600; color: var(--text-3); margin-left: 4px; }
+.f > span:first-child { display: block; }
+
+/* step confirmation checks */
+.chk-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 2px 0 8px; }
+.chk-row .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.chk-row .chk input { width: 16px; height: 16px; accent-color: #16a34a; }
+.ckbadge { flex: none; font-size: 10.5px; font-weight: 800; color: #b45309; background: #fff1e0; border: 1px solid #fbd9ad; border-radius: 6px; padding: 1px 6px; }
+.ckbadge.ok { color: #157347; background: #e3f6ec; border-color: #b9e6cc; }
+.card .gmore { font-size: .78em; color: var(--text-3); font-weight: 700; margin-top: 1px; }
+/* parallel group of n rows: middle rows joined, combined badge centred */
+.proc-side li.par:not(.par-s) { margin-top: -3px; }
+.proc-side li.par:not(.par-s):not(.par-e) { border-radius: 0; }
+.proc-side li.par-s em { transform: translateY(calc(-50% + (var(--gn, 2) - 1) * 13px)); }
+.proc-side.compact li.par-s em { transform: translateY(calc(-50% + (var(--gn, 2) - 1) * 10.5px)); }
