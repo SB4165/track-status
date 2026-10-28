@@ -208,6 +208,8 @@ function doPost(e) {
       case 'exclude':       result = exclude_(body); break;
       case 'syncNcr':       result = syncNcr_(body); break;
       case 'setNcrDone':    result = setNcrDone_(body); break;
+      case 'addUser':       result = addUser_(body); break;
+      case 'removeUser':    result = removeUser_(body); break;
       default: throw new Error('Unknown action');
     }
     return json_(Object.assign({ ok: true }, result));
@@ -334,6 +336,7 @@ function bootstrap_() {
     });
     delete p._row;
   });
+  const users = getDb_().getSheetByName('Users') ? readTable_('Users').map(u => String(u.name || '').trim()).filter(Boolean) : [];
   const notes = {};
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy, style: String(n.style || '') }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
@@ -345,7 +348,7 @@ function bootstrap_() {
     return o;
   }) : [];
   const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty('NCR_SYNCED_AT') || '';
-  return { layout, projects, notes, keyRequired, keyRequiredMfg, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: MFG_STEPS, statuses: STATUSES, serverTime: now_() };
+  return { layout, projects, notes, users, keyRequired, keyRequiredMfg, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: MFG_STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
@@ -844,6 +847,28 @@ function setNcrDone_(b) {
     hRows.push(histArr_(b.user, on ? 'ncrDone' : 'ncrUndone', { id: '', projectName: r.project, slot: '' }, null, 'NO ' + r.no + ' · ' + (r.item || '') + ' · ' + (r.content || '')));
   });
   appendRowsText_(getDb_().getSheetByName('History'), hRows);
+  return bootstrap_();
+}
+
+// ===== 사용자 목록 (상단 사용자 선택, 담당자 자동 입력) — Users sheet, shared by every PC =====
+function usersSheet_() {
+  const ss = getDb_();
+  let sh = ss.getSheetByName('Users');
+  if (!sh) { sh = ss.insertSheet('Users'); sh.getRange(1, 1, 1, 3).setValues([['name', 'addedAt', 'addedBy']]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  return sh;
+}
+function addUser_(b) {
+  const name = String(b.name || '').trim().slice(0, 30);
+  if (!name) throw new Error('이름을 입력하세요.');
+  const sh = usersSheet_();
+  if (findRow_(sh, r => String(r[0]).trim() === name) < 0) appendRowsText_(sh, [[name, now_(), b.user || '']]);
+  return bootstrap_();
+}
+function removeUser_(b) {
+  const name = String(b.name || '').trim();
+  const sh = usersSheet_();
+  const row = findRow_(sh, r => String(r[0]).trim() === name);
+  if (row > 0) sh.deleteRow(row);
   return bootstrap_();
 }
 

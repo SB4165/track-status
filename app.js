@@ -302,6 +302,9 @@
     renderSync();
     renderNcr();
     $('#projCnt').textContent = activeProjects().length || '';
+    let dl = $('#userList'); if (!dl) { dl = document.createElement('datalist'); dl.id = 'userList'; document.body.appendChild(dl); }
+    dl.innerHTML = ((state.data && state.data.users) || []).map(n => `<option value="${esc(n)}">`).join('');
+    if (!$('#overlay').hidden && $('#mTitle').textContent === '사용자 선택') openUsers();
     // FAT test project list: placed projects whose current step is 3~6 (FAT 셋업 ~ FAT 측정(AWC))
     if (window.FatTab) window.FatTab.setProjects(Object.values(bySlot()).map(p => ({ p, i: projectInfo(p) })).filter(x => x.i.curNo >= 3 && x.i.curNo <= 6)
       .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · ${i.cur.stepNo}. ${i.cur.stepName}` })));
@@ -798,7 +801,7 @@
           <div class="grid3 dates">
             <label class="f">시작일<input type="date" name="startDate" value="${esc(s.startDate)}"></label>
             <label class="f">완료일<input type="date" name="endDate" value="${esc(s.endDate)}"></label>
-            <label class="f">담당자<input type="text" name="owner" value="${esc(s.owner)}" placeholder="이름"></label>
+            <label class="f">담당자<input type="text" name="owner" value="${esc(s.owner)}" placeholder="이름" list="userList" autocomplete="off"></label>
           </div>
           ${isMeasure(no) ? `<div class="meas-row"><span class="hint">측정값</span>${measInputs(no, s)}</div>` : ''}
           ${stepChecks(no).length ? `<div class="chk-row" data-checks="1"><span class="hint">확인</span>${stepChecks(no).map(k => `<label class="chk"><input type="checkbox" value="${esc(k)}" ${ckSet(s).has(k) ? 'checked' : ''}> ${esc(k)} 확인</label>`).join('')}</div>` : ''}
@@ -1462,6 +1465,7 @@
       const f = { status: on ? on.dataset.v : s.status, startDate: v('startDate'), endDate: v('endDate'), owner: v('owner'), progress: v('progress'), issue: v('issue') };
       const ck = mfg ? undefined : ckVal(el); if (ck !== undefined) f.checks = ck;
       if (!Object.keys(f).some(k => String(f[k] || '').trim() !== String(s[k] || '').trim())) return;
+      if (!String(f.owner || '').trim()) f.owner = LS.get('track.user') || ''; // 담당자 비어 있으면 작성자
       jobs.push(() => mutate(Object.assign({ action: 'saveStep', projectId: pid, stepNo: no }, mfg ? { track: 'mfg' } : {}, f), null, (d, user) => {
         const x = byId(d, pid); if (!x) return;
         const st = (mfg ? x.mfg : x.steps).find(y => Number(y.stepNo) === no); if (!st) return; Object.assign(st, f, { updatedAt: nowStr(), updatedBy: user });
@@ -1518,6 +1522,7 @@
       const sd = el.querySelector('[name=startDate]'), ed = el.querySelector('[name=endDate]');
       if (segBtn.dataset.v !== '대기' && !sd.value) sd.value = today();
       if (segBtn.dataset.v === '완료' && !ed.value) ed.value = today();
+      const ow = el.querySelector('[name=owner]'); if (ow && !ow.value.trim() && segBtn.dataset.v !== '대기' && LS.get('track.user')) ow.value = LS.get('track.user');
       return;
     }
     const save = t.closest('[data-save]');
@@ -1526,6 +1531,7 @@
       const v = n => fieldVal(el.querySelector(`[name=${n}]`));
       const on = el.querySelector('.seg-ctl button.on');
       const f = { status: on ? on.dataset.v : '대기', startDate: v('startDate'), endDate: v('endDate'), owner: v('owner'), progress: v('progress'), issue: v('issue') };
+      if (!String(f.owner || '').trim()) f.owner = getUser(); // 담당자 비어 있으면 작성자
       const mfg = state.openTrack === 'mfg';
       const ck = mfg ? undefined : ckVal(el); if (ck !== undefined) f.checks = ck;
       const pid = state.openProjectId;
@@ -1585,7 +1591,36 @@
   });
 
   $('#refreshBtn').addEventListener('click', () => load(true));
-  $('#userBtn').addEventListener('click', () => { const u = prompt('작성자 이름', LS.get('track.user') || ''); if (u !== null) { LS.set('track.user', u.trim()); renderUser(); } });
+  $('#userBtn').addEventListener('click', openUsers);
+  // 사용자 선택: shared list (Users sheet) — pick = this PC's 작성자; add/remove = 품질 비밀번호
+  function openUsers() {
+    state.openProjectId = null;
+    const cur = LS.get('track.user') || '';
+    const list = (state.data && state.data.users) || [];
+    $('#mSlot').textContent = '이 PC의 작성자 · 공정 담당자 자동 입력에 사용';
+    $('#mTitle').textContent = '사용자 선택';
+    $('#mBody').innerHTML = `
+      <div class="ulist">${list.length ? list.map(n => `<div class="urow ${n === cur ? 'on' : ''}"><button type="button" class="upick" data-upick="${esc(n)}">${n === cur ? '✓ ' : ''}${esc(n)}</button><button type="button" class="ib del" data-udel="${esc(n)}" title="목록에서 삭제" aria-label="삭제"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg></button></div>`).join('') : '<div class="hint">등록된 사용자가 없습니다. 아래에서 추가하세요.</div>'}</div>
+      ${cur && !list.includes(cur) ? `<div class="hint" style="margin-top:8px">현재 작성자: <b>${esc(cur)}</b> (목록에 없음)</div>` : ''}
+      <div class="uadd"><input class="in" id="uNew" placeholder="이름 추가 (예: 홍길동)" maxlength="30" autocomplete="off"><button class="btn primary" id="uAdd">추가</button></div>
+      <div class="hint" style="margin-top:6px">목록은 모든 PC에서 공유됩니다. 추가·삭제는 품질 비밀번호가 필요합니다.</div>`;
+    openModal(true);
+  }
+  $('#mBody').addEventListener('click', e => {
+    const pk = e.target.closest('[data-upick]');
+    if (pk) { LS.set('track.user', pk.dataset.upick); renderUser(); toast(`작성자: ${pk.dataset.upick}`); closeModal(); return; }
+    const dl = e.target.closest('[data-udel]');
+    if (dl) { const n = dl.dataset.udel; if (!confirm(`'${n}'을(를) 사용자 목록에서 삭제할까요?`)) return;
+      mutate({ action: 'removeUser', name: n }, '삭제되었습니다', d => { d.users = (d.users || []).filter(x => x !== n); }, () => { if (state.data && !$('#overlay').hidden && $('#mTitle').textContent === '사용자 선택') openUsers(); }); return; }
+    if (e.target.id === 'uAdd') {
+      const n = ($('#uNew').value || '').trim(); if (!n) { $('#uNew').focus(); return; }
+      if (((state.data && state.data.users) || []).includes(n)) { toast('이미 있는 이름입니다', true); return; }
+      if (!LS.get('track.user')) { LS.set('track.user', n); renderUser(); } // first name added becomes this PC's 작성자
+      mutate({ action: 'addUser', name: n }, `${n} 추가되었습니다`, d => { d.users = (d.users || []).concat(n); });
+      setTimeout(() => { if (!$('#overlay').hidden && $('#mTitle').textContent === '사용자 선택') openUsers(); }, 50);
+    }
+  });
+  $('#mBody').addEventListener('keydown', e => { if (e.target.id === 'uNew' && e.key === 'Enter') { e.preventDefault(); $('#uAdd').click(); } });
 
   async function load(manual) {
     if (state.pending) return;
@@ -1644,8 +1679,8 @@
       NR(2860, false, '현물수정', '08/08', 'RD-SH-13-013 EMR#1', 'LM GUIDE', 'CME00-LM00-M019-0', 1, '아진물산', 'Hole', '한태경', '김수원', '체결 불가'),
       NR(2902, false, '', '08/11', 'ECP352', 'MAGNET', 'B-05-002', 1, '기구', '외관손상', '최진혁', '김나현', '대상 외 프로젝트(필터됨)'),
     ];
-    const ncr = []; let ncrAt = '';
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), mfgStepDefs: MSTEPS.map((n, i) => ({ no: i + 1, name: n, file: false })), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13, 14, 15].includes(i + 1) ? 'A' : undefined, checks: i === 11 ? ['QC시트', 'IO시트'] : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
+    const ncr = []; let ncrAt = ''; const users = ['곽승범', '김나현'];
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), users, mfgStepDefs: MSTEPS.map((n, i) => ({ no: i + 1, name: n, file: false })), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13, 14, 15].includes(i + 1) ? 'A' : undefined, checks: i === 11 ? ['QC시트', 'IO시트'] : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));
@@ -1688,6 +1723,8 @@
           ncrSrc.filter(r => names.includes(r.project.replace(/\s+/g, '').toUpperCase())).forEach(r => { if (!ncr.some(x => x.no === r.no)) { ncr.push(Object.assign({}, r, { syncedAt: now(), updatedAt: '', updatedBy: '' })); added++; } });
           ncrAt = now(); const j = snap(); j.ncrResult = { added, filled: 0 }; return wait(j);
         }
+        if (b.action === 'addUser') { if (!users.includes(b.name)) users.push(b.name); return wait(snap()); }
+        if (b.action === 'removeUser') { const k = users.indexOf(b.name); if (k >= 0) users.splice(k, 1); return wait(snap()); }
         if (b.action === 'setNcrDone') { ncr.forEach(x => { if ((b.nos || []).includes(x.no)) { x.done = b.done !== false; x.updatedAt = now(); x.updatedBy = b.user; } }); return wait(snap()); }
         if (b.action === 'unsync') { db.forEach(x => { if ((b.projectIds || []).includes(x.id) && x.state === 'active') { log(b, 'unsync', x); x.state = 'removed'; x.slot = null; } }); return wait(snap()); }
         if (b.action === 'exclude') { (b.names || []).forEach(n => { const i = excluded.indexOf(n); if (b.on && i < 0) excluded.push(n); if (!b.on && i >= 0) excluded.splice(i, 1); log(b, b.on ? 'exclude' : 'include', { id: '', projectName: n, slot: '' }); }); return wait(snap()); }
