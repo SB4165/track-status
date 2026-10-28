@@ -211,7 +211,7 @@
       const ov = document.createElement('div');
       ov.className = 'overlay'; ov.style.zIndex = '90';
       ov.innerHTML = `<div class="sheet narrow" role="dialog" aria-modal="true"><div class="sheet-head"><div><h2>${esc(title)}</h2></div></div>
-        <div class="sheet-body"><div class="hint" style="font-size:14px">${esc(msg)}</div>
+        <div class="sheet-body"><div class="hint" style="font-size:14px;white-space:pre-line">${esc(msg)}</div>
         <div class="row-end"><button class="btn" data-a="0">아니오</button><button class="btn primary" data-a="1">예</button></div></div></div>`;
       document.body.appendChild(ov);
       ov.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (!b) return; ov.remove(); resolve(b.dataset.a === '1'); });
@@ -1705,6 +1705,22 @@
       },
     };
   })();
+
+  // FAT 탭 '측정값 업로드': P-P Diameter -> 반복정밀도(5번)/AWC(6번) 공정의 X1/X2 (other hand's value kept)
+  if (window.FatTab) window.FatTab.upload = async (u) => {
+    const p = activeProjects().find(x => x.projectName === u.proj);
+    if (!p) { toast('프로젝트를 찾을 수 없습니다: ' + u.proj, true); return; }
+    const def = measDefs().find(d => (u.test === 'awc' ? /AWC/i : /반복정밀도/).test(d.name));
+    if (!def) { toast('측정 공정을 찾을 수 없습니다', true); return; }
+    const s = (p.steps || []).find(x => Number(x.stepNo) === def.no) || {};
+    const k = u.hand === 'X2' ? 'x2' : 'x1';
+    const old = String(s[k] || '').trim();
+    const ok = await confirmBox('측정값 업로드', `${p.projectName}\n${def.no}. ${def.name} · ${u.hand} = ${u.value}${old ? `\n(기존 값 ${old} → 덮어쓰기)` : ''}`);
+    if (!ok) return;
+    if (needKey() && !(await askKey())) return;
+    const item = { stepNo: def.no, x1: k === 'x1' ? u.value : String(s.x1 || ''), x2: k === 'x2' ? u.value : String(s.x2 || '') };
+    saveMeas(p.id, [item], `측정값 업로드 완료 · ${p.projectName} ${def.no}번 ${u.hand} ${u.value}`);
+  };
 
   // ===================== Init =====================
   renderUser();

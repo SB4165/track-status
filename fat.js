@@ -93,9 +93,9 @@
   try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
   const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
   let PROJECTS = null; // null = not loaded yet; [{ name, label }]
-  const S = { meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
-  try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; } catch (_) { /* storage blocked */ }
-  const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis }))); } catch (_) { /* ignore */ } };
+  const S = { clickCheck: true, meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
+  try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; S.clickCheck = c.clickCheck !== false; } catch (_) { /* storage blocked */ }
+  const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis, clickCheck: !!S.clickCheck }))); } catch (_) { /* ignore */ } };
   const toast = (m, err) => { const t = $('#toast'); if (!t) return; t.textContent = m; t.className = 'toast' + (err ? ' err' : ''); t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600); };
 
   function view() { return $('#viewFat'); }
@@ -129,13 +129,14 @@
             <label class="fat-chk fat-ax" title="엑셀 결과값 시트와 같은 축 범위(0 포함)로 보기"><input type="checkbox" id="fatExcelAx" ${S.excelAxis ? 'checked' : ''}> 엑셀 축</label><button class="btn" id="fatPng" disabled>그래프 PNG</button><button class="btn" id="fatXlsx" disabled>엑셀</button></div>
           <div class="fat-cv"><canvas id="fatCanvas" aria-label="XY Repeatability 산점도 — 점을 누르면 Index 표시"></canvas><div class="fat-empty" id="fatEmpty">로그를 붙여넣으면 그래프가 표시됩니다</div></div>
           <div class="fat-pick" id="fatPick" hidden></div>
-          <div class="fat-lg"><span><i class="d b"></i>Measured</span><span><i class="l"></i>Reference circle</span><span><i class="d r"></i>Outside circle</span><span><i class="d s"></i>선택(체크)</span></div>
+          <div class="fat-lg"><span><i class="d b"></i>Measured</span><span><i class="l"></i>Reference circle</span><span><i class="d r"></i>Outside circle</span><span><i class="d s"></i>선택(체크)</span><label class="fat-chk fat-cc" title="그래프에서 점을 누르면 측정값 목록에서도 체크(다시 누르면 해제)"><input type="checkbox" id="fatClickCk" ${S.clickCheck ? 'checked' : ''}> 점 클릭 시 체크</label></div>
         </section>
-        <section class="fat-card fat-res"><div class="fat-h"><h3>결과</h3></div><div class="fat-sum" id="fatSum"></div></section>
+        <section class="fat-card fat-res"><div class="fat-h"><h3>결과</h3><button class="btn primary" id="fatUpload" disabled title="P-P Diameter를 선택한 프로젝트의 측정 공정(반복정밀도=5번, AWC=6번) X1/X2 값으로 저장">측정값 업로드</button></div><div class="fat-sum" id="fatSum"></div></section>
       <section class="fat-card fat-meas">
         <div class="fat-h"><h3>측정값</h3>
           <label class="fat-chk"><input type="checkbox" id="fatOutOnly"> OUT만 보기</label>
           <span class="fat-sp"></span>
+          <span class="fat-rng" title="예: 1-50 또는 1~50, 80-90"><input class="in" id="fatRange" placeholder="Index 범위 1-50" autocomplete="off"><button class="btn" id="fatRangeSel" disabled>범위 체크</button></span>
           <button class="btn" id="fatDelSel" disabled>선택 삭제</button>
           <button class="btn danger-o" id="fatDelOut" disabled>OUT 전체 삭제</button>
           <button class="btn ghost" id="fatUndo" disabled>되돌리기</button>
@@ -190,7 +191,7 @@
   }
   function renderButtons() {
     const r = S.res;
-    $('#fatPng').disabled = !r; $('#fatXlsx').disabled = !r;
+    $('#fatPng').disabled = !r; $('#fatXlsx').disabled = !r; $('#fatUpload').disabled = !r; $('#fatRangeSel').disabled = !r;
     $('#fatDelSel').disabled = !S.sel.size; $('#fatDelSel').textContent = S.sel.size ? `선택 삭제 (${S.sel.size})` : '선택 삭제';
     $('#fatDelOut').disabled = !(r && r.outs.length);
     $('#fatUndo').disabled = !S.undo.length; $('#fatRestore').disabled = !(S.meta && S.pts.length !== S.orig.length) && !S.undo.length;
@@ -444,7 +445,36 @@
     // row click (not the checkbox) → show the point on the chart; chart click → index + scroll to the row
     $('#fatRows').addEventListener('click', e => { if (e.target.closest('input')) return; const r = e.target.closest('[data-row]'); if (!r) return; const i = Number(r.dataset.row); focusPoint(S.focus === i ? null : i, false); });
     const cv = $('#fatCanvas');
-    cv.addEventListener('click', e => { const p = nearest(e); focusPoint(p ? p.idx : null, true); });
+    cv.addEventListener('click', e => {
+      const p = nearest(e);
+      if (p && S.clickCheck) { if (S.sel.has(p.idx) && S.focus === p.idx) S.sel.delete(p.idx); else S.sel.add(p.idx); renderButtons(); const all = $('#fatAll'); if (all) all.checked = viewRows.length > 0 && viewRows.every(x => S.sel.has(x.idx)); }
+      focusPoint(p ? p.idx : null, true);
+    });
+    $('#fatClickCk').addEventListener('change', e => { S.clickCheck = e.target.checked; saveCond(); });
+    // Index range (e.g. "1-50, 80~90") -> add to the checked set (then 선택 삭제)
+    const rangeSel = () => {
+      const txt = $('#fatRange').value.trim(); const n = S.pts.length; if (!txt || !n) return;
+      const add = new Set(); let bad = false;
+      txt.split(/[,\s]+/).filter(Boolean).forEach(part => {
+        const m = part.match(/^(\d+)(?:[-~](\d+))?$/); if (!m) { bad = true; return; }
+        let a = Number(m[1]), b = m[2] ? Number(m[2]) : a; if (a > b) [a, b] = [b, a];
+        for (let i = Math.max(1, a); i <= Math.min(n, b); i++) add.add(i);
+      });
+      if (bad || !add.size) { toast(`Index 범위를 확인하세요 (1~${n}, 예: 1-50)`, true); return; }
+      add.forEach(i => S.sel.add(i)); paintRows(); renderButtons(); drawChart();
+      const all = $('#fatAll'); if (all) all.checked = viewRows.length > 0 && viewRows.every(x => S.sel.has(x.idx));
+      toast(`${add.size}개 점 체크 · 선택 ${S.sel.size}개 (선택 삭제로 삭제)`);
+    };
+    $('#fatRangeSel').addEventListener('click', rangeSel);
+    $('#fatRange').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); rangeSel(); } });
+    // P-P Diameter -> project measurement step (app.js does the save; password asked there)
+    $('#fatUpload').addEventListener('click', () => {
+      if (!S.res) return;
+      const m = infoMissing().filter(x => ['fiProj', 'hand', 'test'].includes(x[0]));
+      if (m.length) { canExport(); return; }
+      if (!root.FatTab.upload) { toast('업로드를 사용할 수 없습니다', true); return; }
+      root.FatTab.upload({ proj: TI.proj, hand: TI.hand, test: TI.test, testLabel: (TESTS.find(t => t[0] === TI.test) || [])[1] || TI.test, value: f6(S.res.pp), no: String(TI.no).trim(), date: TI.date });
+    });
     cv.addEventListener('mousemove', e => { const p = nearest(e); cv.style.cursor = p ? 'pointer' : 'default'; cv.title = p ? `Index ${p.idx} (${f2(p.x)}, ${f2(p.y)})${p.out ? ' · OUT' : ''}` : ''; });
     $('#fatPick').addEventListener('click', e => { if (e.target.closest('.fp-x')) focusPoint(null); });
     $('#fatXlsx').addEventListener('click', exportXlsx);

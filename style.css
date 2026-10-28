@@ -879,6 +879,10 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .card.all .sum { margin-top: auto; }
 .proc-side .ps-gap { height: 10px; }
 .proc-side li.mf b { background: #0e7490; }
+.fat-rng { display: inline-flex; gap: 4px; align-items: center; }
+.fat-rng .in { width: 130px; height: 30px; padding: 4px 8px; font-size: 12.5px; }
+.fat-cc { margin-left: auto; font-size: 12px; }
+.fat-res .fat-h .btn { height: 30px; }
 .mfg-pg { display: flex; align-items: center; gap: 10px; min-height: 38px; }
 .mfg-pg .bar { flex: 1; }
 .mfg-pg b { white-space: nowrap; font-size: 13px; }

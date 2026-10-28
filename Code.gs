@@ -813,7 +813,9 @@ function syncNcr_(b) {
   });
   appendRowsText_(sh, add);
   PropertiesService.getScriptProperties().setProperty('NCR_SYNCED_AT', t);
-  appendRowsText_(getDb_().getSheetByName('History'), [histArr_(user, 'ncrSync', { id: '', projectName: '', slot: '' }, null, '신규 ' + add.length + '건 / 변경 반영 ' + filled + '건')]);
+  // hourly auto sync logs only when something changed
+  if (!b.auto || add.length || filled) appendRowsText_(getDb_().getSheetByName('History'), [histArr_(user, 'ncrSync', { id: '', projectName: '', slot: '' }, null, (b.auto ? '자동 · ' : '') + '신규 ' + add.length + '건 / 변경 반영 ' + filled + '건')]);
+  if (b.auto) return { added: add.length, filled: filled };
   return Object.assign(bootstrap_(), { ncrResult: { added: add.length, filled: filled, matched: rows.length } });
 }
 function setNcrDone_(b) {
@@ -831,6 +833,30 @@ function setNcrDone_(b) {
   });
   appendRowsText_(getDb_().getSheetByName('History'), hRows);
   return bootstrap_();
+}
+
+// ===== 부적합 자동 동기화 (매 정각) =====
+// Run installNcrTrigger() once from the editor (authorizes triggers). Each run re-schedules itself at the next full hour,
+// and a 1-hour backstop trigger restarts the chain if a run is ever missed.
+function autoSyncNcr() {
+  try { scheduleNextNcr_(); } catch (e) { console.error('schedule: ' + e); }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(60000)) return;
+  try { migrate_(); syncNcr_({ user: 'auto', auto: true }); } catch (e) { console.error('autoSyncNcr: ' + e); } finally { lock.releaseLock(); }
+}
+function scheduleNextNcr_() {
+  const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'autoSyncNcr');
+  triggers.filter(t => t.getEventType() === ScriptApp.EventType.CLOCK && t.getTriggerSource() === ScriptApp.TriggerSource.CLOCK && t.getUniqueId() !== PropertiesService.getScriptProperties().getProperty('NCR_BACKSTOP'))
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  const next = new Date(); next.setMinutes(0, 0, 0); next.setHours(next.getHours() + 1);
+  ScriptApp.newTrigger('autoSyncNcr').timeBased().at(next).create();
+}
+function installNcrTrigger() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'autoSyncNcr').forEach(t => ScriptApp.deleteTrigger(t));
+  const back = ScriptApp.newTrigger('autoSyncNcr').timeBased().everyHours(1).create();
+  PropertiesService.getScriptProperties().setProperty('NCR_BACKSTOP', back.getUniqueId());
+  scheduleNextNcr_();
+  return ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'autoSyncNcr').length + ' triggers';
 }
 
 // ===== 제조 track (MfgSteps) =====
