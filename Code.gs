@@ -187,7 +187,7 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
     migrate_();
-    checkKey_(body.key);
+    checkKey_(body);
     if (body.action === 'checkKey') return json_({ ok: true });
     lock.waitLock(20000);
     let result;
@@ -224,9 +224,18 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function checkKey_(key) {
-  const k = PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
-  if (k && key !== k) throw new Error('비밀번호가 올바르지 않습니다.');
+// passwords per dashboard (Script Properties):
+//   WRITE_KEY     — 통합·품질·프로젝트 관리·FAT 측정값 업로드
+//   WRITE_KEY_MFG — 제조 (제조 공정 저장 + 제조 화면의 배치 변경); falls back to WRITE_KEY when not set
+const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot'];
+function checkKey_(b) {
+  const props = PropertiesService.getScriptProperties();
+  const mfg = b.scope === 'mfg';
+  if (b.track === 'mfg' && !mfg) throw new Error('제조 공정은 제조 대시보드 비밀번호로 저장해야 합니다.');
+  if (mfg && MFG_SCOPE_ACTIONS.indexOf(b.action) < 0) throw new Error('제조 대시보드 권한으로는 할 수 없는 작업입니다.');
+  if (mfg && b.action === 'saveStep' && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
+  const k = mfg ? (props.getProperty('WRITE_KEY_MFG') || props.getProperty('WRITE_KEY')) : props.getProperty('WRITE_KEY');
+  if (k && b.key !== k) throw new Error('비밀번호가 올바르지 않습니다.');
 }
 
 // ===== Reference: project names =====
@@ -326,6 +335,7 @@ function bootstrap_() {
   const notes = {};
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy, style: String(n.style || '') }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
+  const keyRequiredMfg = !!(PropertiesService.getScriptProperties().getProperty('WRITE_KEY_MFG') || PropertiesService.getScriptProperties().getProperty('WRITE_KEY'));
   const syncExcluded = getDb_().getSheetByName('SyncState') ? readTable_('SyncState').filter(r => r.state === 'excluded').map(r => String(r.name)) : [];
   const ncr = getDb_().getSheetByName('Ncr') ? readTable_('Ncr').filter(r => String(r.no) !== '').map(r => {
     const o = { no: String(r.no), done: r.done === true || String(r.done).toUpperCase() === 'TRUE' };
@@ -333,7 +343,7 @@ function bootstrap_() {
     return o;
   }) : [];
   const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty('NCR_SYNCED_AT') || '';
-  return { layout, projects, notes, keyRequired, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: MFG_STEPS, statuses: STATUSES, serverTime: now_() };
+  return { layout, projects, notes, keyRequired, keyRequiredMfg, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: MFG_STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {

@@ -40,13 +40,13 @@
     return j;
   }
   async function apiPost(body) {
-    const key = SS.get('track.key');
+    const key = SS.get(keyName(body.scope));
     if (key) body.key = key;
     const j = DEMO ? await Demo.post(body) : await (await fetch(API, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), redirect: 'follow',
     })).json();
     if (!j.ok) {
-      if (/비밀번호|권한 키/.test(j.error || '')) SS.del('track.key');
+      if (/비밀번호|권한 키/.test(j.error || '')) SS.del(keyName(body.scope));
       throw new Error(j.error || '저장 실패');
     }
     return j;
@@ -95,6 +95,9 @@
   // projects shown on the current dashboard (제조: equipment slots only — pack slots exist only in 품질)
   const boardMap = () => { const m = bySlot(); if (state.dash === 'mfg') Object.keys(m).forEach(k => { if (isPack(k)) delete m[k]; }); return m; };
   const notStarted = (c) => !c || (Number(c.stepNo) === 1 && c.status === '대기');
+  // 통합: one track per project — 제조 until 품질 has begun (품질 follows 제조); 제조 finished or pack slot -> 품질
+  const liveTrack = (p) => { const qStarted = (p.steps || []).some(s => s.status !== '대기'); const mOpen = (p.mfg || []).some(s => s.status !== '완료' && s.status !== '생략');
+    return !qStarted && mOpen && !isPack(p.slot) ? 'mfg' : 'qa'; };
 
   function projectInfo(p) {
     const steps = p.steps || [];
@@ -179,12 +182,14 @@
   // ===================== Optimistic mutations =====================
   // apply(data) changes local data immediately; the request is queued and synced in the background.
   // password dialog (once per tab session)
-  const needKey = () => !!(state.data && state.data.keyRequired) && !SS.get('track.key');
-  function askKey() {
+  // passwords per dashboard: 'mfg' = 제조 (step saves + placement from 제조), default = 통합·품질·프로젝트 관리·FAT 업로드
+  const keyName = (scope) => (scope === 'mfg' ? 'track.key.mfg' : 'track.key');
+  const needKey = (scope) => !!(state.data && (scope === 'mfg' ? (state.data.keyRequiredMfg ?? state.data.keyRequired) : state.data.keyRequired)) && !SS.get(keyName(scope));
+  function askKey(scope) {
     return new Promise(resolve => {
       const ov = document.createElement('div');
       ov.className = 'overlay'; ov.style.zIndex = '90';
-      ov.innerHTML = `<div class="sheet narrow" role="dialog" aria-modal="true"><div class="sheet-head"><div><div class="eyebrow">입력·수정·삭제 권한</div><h2>비밀번호 입력</h2></div></div>
+      ov.innerHTML = `<div class="sheet narrow" role="dialog" aria-modal="true"><div class="sheet-head"><div><div class="eyebrow">입력·수정·삭제 권한 · ${scope === 'mfg' ? '제조 대시보드' : '품질·프로젝트 관리'}</div><h2>비밀번호 입력</h2></div></div>
         <div class="sheet-body"><label class="f">비밀번호<input type="password" id="pwIn" autocomplete="current-password"></label>
         <div class="hint" id="pwMsg" style="margin-top:6px">이 창(탭)을 닫기 전까지는 다시 묻지 않습니다.</div>
         <div class="row-end"><button class="btn" id="pwNo">취소</button><button class="btn primary" id="pwOk">확인</button></div></div></div>`;
@@ -194,9 +199,9 @@
       const submit = async () => {
         const v = inp.value.trim(); if (!v) { inp.focus(); return; }
         okB.disabled = true; msg.textContent = '확인 중…'; msg.style.color = '';
-        SS.set('track.key', v);
-        try { await apiPost({ action: 'checkKey' }); done(true); }
-        catch (e) { SS.del('track.key'); msg.textContent = e.message; msg.style.color = 'var(--danger)'; okB.disabled = false; inp.select(); }
+        SS.set(keyName(scope), v);
+        try { await apiPost({ action: 'checkKey', scope: scope || '' }); done(true); }
+        catch (e) { SS.del(keyName(scope)); msg.textContent = e.message; msg.style.color = 'var(--danger)'; okB.disabled = false; inp.select(); }
       };
       okB.addEventListener('click', submit);
       ov.querySelector('#pwNo').addEventListener('click', () => { done(false); render(); });
@@ -220,7 +225,8 @@
   }
 
   function mutate(body, okMsg, apply, after) {
-    if (needKey()) { askKey().then(ok => { if (ok) mutate(body, okMsg, apply, after); }); return false; }
+    if (!body.scope && (body.track === 'mfg' || (body.action === 'setSlot' && state.tab === 'board' && state.dash === 'mfg'))) body.scope = 'mfg';
+    if (needKey(body.scope)) { askKey(body.scope).then(ok => { if (ok) mutate(body, okMsg, apply, after); }); return false; }
     const user = getUser();
     if (apply) {
       try { apply(state.data, user); } catch (e) { toast(e.message, true); render(); return false; }
@@ -355,7 +361,7 @@
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
     // one list per track (통합 = 제조 + 품질); count = placed projects whose current step is it (not-started projects excluded)
     const sec = (defs, info, qa, title) => {
-      const cnt = {}; Object.values(boardMap()).forEach(p => { const c = info(p).cur; if (notStarted(c)) return;
+      const cnt = {}; Object.values(boardMap()).forEach(p => { if (state.dash === 'all' && liveTrack(p) !== (qa ? 'qa' : 'mfg')) return; const c = info(p).cur; if (notStarted(c)) return;
         const k = qa && parOf(c.stepNo) ? groupStart(c.stepNo) : c.stepNo; cnt[k] = (cnt[k] || 0) + 1; });
       const parPos = (s) => { if (!qa || !s.par) return ''; const g = defs.filter(x => x.par === s.par); return g.length < 2 ? '' : s.no === g[0].no ? 'par par-s' : s.no === g[g.length - 1].no ? 'par par-e' : 'par'; };
       return `<div class="ps-h">${title} <span>${defs.length}단계</span></div><ol>${defs.map(s => `<li class="${qa && s.no >= PACK_MIN_STEP ? 'pk' : ''} ${qa ? '' : 'mf'} ${parPos(s)}"><b>${s.no}</b><span class="nm">${esc(s.name)}</span>${cnt[s.no] ? `<em ${parPos(s) ? `style="--gn:${defs.filter(x => x.par === s.par).length}"` : ''} title="${parPos(s) ? '현재 이 병행 공정인 프로젝트 (합계)' : '현재 이 공정인 프로젝트'}">${cnt[s.no]}</em>` : ''}</li>`).join('')}</ol>`;
@@ -435,7 +441,7 @@
     return `<button class="card all ${pack ? 'pack' : ''} ${(!pack && m.hasIssue) || q.hasIssue ? 'has-issue' : ''}" data-pid="${esc(p.id)}" data-st="${esc(st)}" title="${esc(p.projectName)}">
       ${typesHTML(slot)}
       <div class="card-top"><span class="no ${pack ? 'pk' : ''}">${esc(slotTag(slot))}</span><span class="pname">${esc(p.projectName)}</span></div>
-      ${pack ? '' : trk('제조', m, 'mf')}${trk('품질', q, 'qa')}
+      ${liveTrack(p) === 'mfg' ? trk('제조', m, 'mf') : trk('품질', q, 'qa')}
       <div class="sum"><div class="row ${iss ? 'issue' : ''}" title="${esc(tip)}"><span class="t">이슈</span><span class="v">${iss ? mdView(lineBreaks(iss)) : '<span class="muted">없음</span>'}</span></div></div>
     </button>`;
   }
@@ -684,14 +690,15 @@
     const curOf = (i) => i.cur ? i.curGroup.map(s => `<span class="cs1"><span class="t">${s.stepNo}. ${esc(s.stepName)}</span>${pill(s.status)}</span>`).join('') : `<span class="t">전 공정 완료</span>${pill('완료')}`;
     const prog = (i, lb) => `<span class="stl-p">${lb ? `<em class="stl-k">${lb}</em>` : ''}<span class="bar"><i style="width:${i.pct}%"></i></span>${i.done}/${i.total} · ${i.pct}%</span>`;
     $('#mBody').innerHTML = list.length ? `<div class="stl">${list.map(({ p, i, m }) => {
-      const cur = all ? `${m ? `<span class="stl-tr"><em class="stl-k">제조</em>${curOf(m)}</span>` : ''}<span class="stl-tr"><em class="stl-k">품질</em>${curOf(i)}</span>` : curOf(i);
+      const lt = all && m && liveTrack(p) === 'mfg';
+      const cur = all ? (lt ? `<span class="stl-tr"><em class="stl-k">제조</em>${curOf(m)}</span>` : `<span class="stl-tr"><em class="stl-k">품질</em>${curOf(i)}</span>`) : curOf(i);
       const issAll = () => [m && m.hasIssue ? '[제조] ' + (m.issueTip || fixTxt(m)) : '', i.hasIssue ? '[품질] ' + (i.issueTip || fixTxt(i)) : ''].filter(Boolean).join('\n');
       const extra = key === 'fixing' ? fixTxt(i) : (key === 'issue' ? (all ? issAll() : (i.issueTip || fixTxt(i))) : (all ? '' : (i.prog || '')));
       const lbl = key === 'fixing' ? '조치중' : key === 'issue' ? '이슈' : '진행';
       return `<button type="button" class="stl-r" data-open="${esc(p.id)}">
         <span class="stl-s">${esc(slotName(p.slot))}</span>
         <span class="stl-m"><b>${esc(p.projectName)}</b><span class="stl-c">${cur}</span>
-          ${all ? (m ? prog(m, '제조') : '') + prog(i, '품질') : prog(i)}
+          ${all ? (lt ? prog(m, '제조') : prog(i, '품질')) : prog(i)}
           ${extra ? `<span class="stl-x ${key === 'fixing' || key === 'issue' ? 'warn' : ''}"><em>${lbl}</em>${mdView(lineBreaks(extra))}</span>` : ''}</span>
         <span class="stl-go">›</span></button>`;
     }).join('')}</div>` : '<div class="empty-msg">해당하는 프로젝트가 없습니다.</div>';
@@ -1432,7 +1439,8 @@
   $('#mSave').addEventListener('click', saveAll);
   // top save: collect every changed field first (a mutation re-renders the modal), then queue the saves
   function saveAll() {
-    if (needKey()) { askKey().then(ok => { if (ok) saveAll(); }); return; }
+    const sc = state.openTrack === 'mfg' ? 'mfg' : '';
+    if (needKey(sc)) { askKey(sc).then(ok => { if (ok) saveAll(); }); return; }
     const pid = state.openProjectId; const p = findProject(pid); if (!p) return;
     const mfg = state.openTrack === 'mfg';
     if (state.openTrack === 'all') return;
