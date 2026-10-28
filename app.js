@@ -381,6 +381,9 @@
     const ms = () => sec(mfgDefs(), p => projectInfo(vpM(p)), false, state.dash === 'all' ? '제조 공정' : '전체 공정');
     side.innerHTML = (state.dash === 'mfg' ? ms() : state.dash === 'all' ? ms() + '<div class="ps-gap"></div>' + qs() : qs())
       + `<div class="ps-f"><div class="ps-l"><em>n</em><span>배치·착수된 프로젝트 수 (현재 공정)</span></div>${(state.dash !== 'mfg' ? qd : []).concat(state.dash !== 'qa' ? mfgDefs() : []).some(s => s.par) ? '<div class="ps-l"><i class="parbar"></i><span>병행 공정</span></div>' : ''}</div>`;
+    // whole list visible: tighten rows step by step until it fits the plan height (통합 = 제조 + 품질 lists)
+    side.classList.remove('d1', 'd2', 'd3');
+    for (const c of ['d1', 'd2', 'd3']) { if (side.scrollHeight <= side.clientHeight + 1) break; side.classList.add(c); }
     // parallel-group names stay on one line: shrink the font until they fit
     side.querySelectorAll('li.par .nm').forEach(n => { let f = parseFloat(getComputedStyle(n).fontSize); n.style.fontSize = ''; f = parseFloat(getComputedStyle(n).fontSize); while (n.scrollWidth > n.clientWidth + 0.5 && f > 8) { f -= 0.5; n.style.fontSize = f + 'px'; } });
     followProcSide();
@@ -465,6 +468,7 @@
     $('#dashTabs').innerHTML = DASH.map(([k, l]) => `<button type="button" class="dtab ${mode === k ? 'on' : ''}" data-dash="${k}">${l}</button>`).join('');
     $('#legend').innerHTML = d.statuses.map(s => `<span><i style="background:var(${cssVar(s)})"></i>${esc(s)}</span>`).join('')
       + `<span class="hint">${mode === 'all' ? '통합 보기 (조회 전용) — 수정은 제조·품질 탭에서' : mode === 'mfg' ? '제조 공정 · 배치는 품질과 공유됩니다' : '장비 칸을 누르면 전체 공정을 볼 수 있습니다'}</span>`;
+    $('#legend').insertAdjacentHTML('beforeend', `<button type="button" class="btn cap-btn" id="capBtn" title="공정 목록 + 배치도를 이미지로 클립보드에 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>화면 복사</button>`);
     const avgOf = (f) => placed.length ? Math.round(placed.reduce((a, p) => a + f(p).pct, 0) / placed.length) : 0;
     const nSlots = slotItems().filter(l => mode !== 'mfg' || l.type !== 'pack').length;
     const unplaced = activeProjects().filter(p => !p.slot).length;
@@ -719,6 +723,51 @@
     }).join('')}</div>` : '<div class="empty-msg">해당하는 프로젝트가 없습니다.</div>';
     openModal(false);
   }
+  // ===== 화면 복사: 공정 목록 + 배치도 -> PNG -> clipboard (fallback: download) =====
+  const H2I_URL = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js';
+  function loadH2I() {
+    if (window.htmlToImage) return Promise.resolve();
+    return loadH2I._p || (loadH2I._p = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = H2I_URL; sc.onload = res; sc.onerror = () => { loadH2I._p = null; rej(new Error('캡처 기능을 불러오지 못했습니다')); }; document.head.appendChild(sc); }));
+  }
+  async function boardBlob() {
+    await loadH2I();
+    const bg = getComputedStyle(document.body).backgroundColor || '#fff';
+    const opt = { pixelRatio: 2, backgroundColor: bg, filter: n => !(n.classList && n.classList.contains('cap-skip')) };
+    if (!loadH2I._font) { try { loadH2I._font = await htmlToImage.getFontEmbedCSS(document.body); } catch (_) { loadH2I._font = ''; } }
+    opt.fontEmbedCSS = loadH2I._font;
+    const plan = $('#plan'), side = $('#procSide');
+    const pc = await htmlToImage.toCanvas(plan, opt);
+    let sc = null;
+    // the list is absolutely positioned left of the plan: render its clone in normal flow
+    if (side && !side.hidden) sc = await htmlToImage.toCanvas(side, Object.assign({}, opt, { width: side.offsetWidth, height: side.offsetHeight, style: { position: 'static', top: '0', right: 'auto', left: 'auto', margin: '0', transition: 'none' } }));
+    const k = 2, pad = 16 * k, gap = 14 * k, headH = 34 * k;
+    const W = pad * 2 + (sc ? sc.width + gap : 0) + pc.width, Hh = pad * 2 + headH + Math.max(pc.height, sc ? sc.height : 0);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+    const c = cv.getContext('2d'); c.fillStyle = bg; c.fillRect(0, 0, W, Hh);
+    const txt = getComputedStyle(document.body).color || '#111';
+    c.fillStyle = txt; c.font = `700 ${16 * k}px Pretendard, 'Malgun Gothic', sans-serif`; c.textBaseline = 'middle';
+    const label = { all: '통합', mfg: '제조', qa: '품질' }[state.dash] || '';
+    c.fillText(`트랙(Track) · ${label} 대시보드`, pad, pad + headH / 2 - 4 * k);
+    c.font = `500 ${12 * k}px Pretendard, 'Malgun Gothic', sans-serif`; c.globalAlpha = 0.6; c.textAlign = 'right';
+    c.fillText(nowStr(), W - pad, pad + headH / 2 - 4 * k); c.globalAlpha = 1; c.textAlign = 'left';
+    let x = pad; const y = pad + headH;
+    if (sc) { c.drawImage(sc, x, y); x += sc.width + gap; }
+    c.drawImage(pc, x, y);
+    return new Promise((res, rej) => cv.toBlob(b => (b ? res(b) : rej(new Error('이미지 생성 실패'))), 'image/png'));
+  }
+  $('#legend').addEventListener('click', e => {
+    const btn = e.target.closest('#capBtn'); if (!btn || btn.disabled) return;
+    btn.disabled = true; toast('화면을 이미지로 만드는 중…');
+    const blobP = boardBlob();
+    const done = () => { btn.disabled = false; };
+    const download = (b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `트랙_${({ all: '통합', mfg: '제조', qa: '품질' })[state.dash]}_${nowStr().replace(/[-: ]/g, '').slice(2, 12)}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+    // the clipboard write starts inside the click (blob promise) so the browser keeps the user gesture
+    let p;
+    try { p = (navigator.clipboard && window.ClipboardItem) ? navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })]) : Promise.reject(new Error('no clipboard')); } catch (err) { p = Promise.reject(err); }
+    p.then(() => toast('화면이 클립보드에 복사되었습니다 (Ctrl+V로 붙여넣기)'))
+      .catch(() => blobP.then(b => { download(b); toast('클립보드 복사가 막혀 PNG 파일로 저장했습니다'); }).catch(err => toast('화면 복사 실패: ' + err.message, true)))
+      .finally(done);
+  });
   $('#stats').addEventListener('click', e => { const b = e.target.closest('[data-stat]'); if (b) openStatList(b.dataset.stat); });
 
   function openModal(narrow) {
