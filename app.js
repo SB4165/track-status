@@ -225,7 +225,7 @@
   }
 
   function mutate(body, okMsg, apply, after) {
-    if (!body.scope && (body.track === 'mfg' || (body.action === 'setSlot' && state.tab === 'board' && state.dash === 'mfg'))) body.scope = 'mfg';
+    if (!body.scope && (body.track === 'mfg' || (body.action === 'saveNote' && /^mfg:/.test(body.id)) || (body.action === 'setSlot' && state.tab === 'board' && state.dash === 'mfg'))) body.scope = 'mfg';
     if (needKey(body.scope)) { askKey(body.scope).then(ok => { if (ok) mutate(body, okMsg, apply, after); }); return false; }
     const user = getUser();
     if (apply) {
@@ -521,10 +521,13 @@
   // note text style: 'size|weight' (size s/m/l/xl, weight n/b)
   const NOTE_SIZES = [['s', '작게', '.78em'], ['m', '보통', '.88em'], ['l', '크게', '1em'], ['xl', '아주 크게', '1.15em']];
   const noteStyle = (st) => { const [sz, wt] = String(st || '').split('|'); const s = NOTE_SIZES.find(x => x[0] === sz) || NOTE_SIZES[1]; return { size: s[0], weight: wt === 'b' ? 'b' : 'n', css: `font-size:${s[2]};font-weight:${wt === 'b' ? 700 : 400}` }; };
+  // 기타사항: 제조 dashboard keeps its own note ('mfg:' + id); 통합 shows the 품질 note
+  const noteKey = (id) => (state.dash === 'mfg' && state.tab === 'board' ? 'mfg:' + id : id);
   function noteHTML(it) {
-    const n = (state.data.notes || {})[it.id] || {};
+    const key = noteKey(it.id);
+    const n = (state.data.notes || {})[key] || {};
     const has = String(n.content || '').trim();
-    return `<button class="card note" data-note="${esc(it.id)}">
+    return `<button class="card note" data-note="${esc(key)}">
       <div class="note-h"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12l-4 4H4z"/><path d="M16 20v-4h4"/><path d="M8 9h8M8 13h5"/></svg>${esc(it.label || '기타사항')}</div>
       <div class="note-c" style="${noteStyle(n.style).css}">${has ? noteBody(n.content) : '<span class="muted">눌러서 입력하세요</span>'}</div>
       ${n.updatedAt ? `<div class="note-m">${esc(n.updatedAt)}${n.updatedBy ? ' · ' + esc(n.updatedBy) : ''}</div>` : ''}
@@ -533,10 +536,10 @@
 
   function openNote(id) {
     state.openProjectId = null;
-    const it = state.data.layout.find(l => l.id === id) || {};
+    const it = state.data.layout.find(l => l.id === String(id).replace(/^mfg:/, '')) || {};
     const n = (state.data.notes || {})[id] || {};
     $('#mSlot').textContent = n.updatedAt ? `최종 수정 ${n.updatedAt}${n.updatedBy ? ' · ' + n.updatedBy : ''}` : '프로젝트 외 공지, 설비, 일정 등';
-    $('#mTitle').textContent = it.label || '기타사항';
+    $('#mTitle').textContent = (/^mfg:/.test(id) ? '제조 · ' : '') + (it.label || '기타사항');
     // rich editor: select text, then 굵게 (Ctrl+B) / 크게 / 아주 크게; stored as sanitized HTML with a '<!--rt-->' marker
     $('#mBody').innerHTML = `
       <div class="note-tools">

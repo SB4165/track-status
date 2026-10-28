@@ -227,13 +227,15 @@ function json_(obj) {
 // passwords per dashboard (Script Properties):
 //   WRITE_KEY     — 통합·품질·프로젝트 관리·FAT 측정값 업로드
 //   WRITE_KEY_MFG — 제조 (제조 공정 저장 + 제조 화면의 배치 변경); falls back to WRITE_KEY when not set
-const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot'];
+const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote']; // 제조 기타사항 = Notes id 'mfg:<id>'
 function checkKey_(b) {
   const props = PropertiesService.getScriptProperties();
   const mfg = b.scope === 'mfg';
   if (b.track === 'mfg' && !mfg) throw new Error('제조 공정은 제조 대시보드 비밀번호로 저장해야 합니다.');
   if (mfg && MFG_SCOPE_ACTIONS.indexOf(b.action) < 0) throw new Error('제조 대시보드 권한으로는 할 수 없는 작업입니다.');
   if (mfg && b.action === 'saveStep' && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
+  const mfgNote = b.action === 'saveNote' && /^mfg:/.test(String(b.id || ''));
+  if (b.action === 'saveNote' && mfgNote !== mfg) throw new Error(mfgNote ? '제조 기타사항은 제조 대시보드 비밀번호로 저장해야 합니다.' : '품질 기타사항은 품질 비밀번호로 저장해야 합니다.');
   const k = mfg ? (props.getProperty('WRITE_KEY_MFG') || props.getProperty('WRITE_KEY')) : props.getProperty('WRITE_KEY');
   if (k && b.key !== k) throw new Error('비밀번호가 올바르지 않습니다.');
 }
