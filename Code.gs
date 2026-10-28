@@ -21,14 +21,22 @@ const NCR_FIELDS = ['action', 'date', 'due', 'project', 'item', 'partNo', 'qty',
 
 // 제조 (manufacturing) track: same row structure as Steps, stored in MfgSteps
 const MFG_STEPS = [
-  { no: 1, name: '자재입고',          file: false },
-  { no: 2, name: '로봇조립',          file: false },
-  { no: 3, name: '로봇배선',          file: false },
-  { no: 4, name: 'I/O CHECK',         file: false },
-  { no: 5, name: '제어프로그램 삽입', file: false },
-  { no: 6, name: '1차레벨(DRY)',      file: false },
+  { no: 1,  name: '자재입고',          file: false },
+  { no: 2,  name: '로봇 조립',         file: false },
+  { no: 3,  name: '로봇 배선',         file: false },
+  { no: 4,  name: '1차 레벨',          file: false },
+  { no: 5,  name: '제어프로그램 삽입', file: false },
+  { no: 6,  name: 'I/O Check',         file: false },
+  { no: 7,  name: 'DRY Cycle',         file: false, par: 'M' },
+  { no: 8,  name: 'FT (Final Test)',   file: false, par: 'M' },
+  { no: 9,  name: 'FULL Cycle',        file: false },
+  { no: 10, name: 'QC검수 전 점검',    file: false },
 ];
-const MFG_VERSION = '1'; // v1: MfgSteps created; projects whose quality work already started get 제조 = 완료
+// v1: MfgSteps created; projects whose quality work already started get 제조 = 완료
+// v2: 10 steps (reordered by name, 1차레벨(DRY) -> 1차 레벨; new steps 완료 when 제조 was already all done); MfgSteps backed up first
+const MFG_VERSION = '2';
+const MFG_OLD_NAMES = { '자재입고': 1, '로봇조립': 2, '로봇 조립': 2, '로봇배선': 3, '로봇 배선': 3, '1차레벨(DRY)': 4, '1차 레벨': 4, '제어프로그램 삽입': 5, 'I/O CHECK': 6, 'I/O Check': 6,
+  'DRY Cycle': 7, 'FT (Final Test)': 8, 'FULL Cycle': 9, 'QC검수 전 점검': 10 };
 
 const STATUSES = ['대기', '진행', '조치중', '완료', '보류', '생략'];
 const DONE_LIKE = ['완료', '생략'];
@@ -37,9 +45,9 @@ const STEPS = [
   { no: 1,  name: 'QC검수',                 file: false },
   { no: 2,  name: 'QC검수 조치확인',         file: false },
   { no: 3,  name: 'FAT 셋업',               file: false },
-  { no: 4,  name: 'FAT 측정(진동)',          file: true, measure: true },
-  { no: 5,  name: 'FAT 측정(반복정밀도)',    file: true, measure: true },
-  { no: 6,  name: 'FAT 측정(AWC)',           file: true, measure: true },
+  { no: 4,  name: 'FAT 측정(진동)',          file: true, measure: true, par: 'B' },
+  { no: 5,  name: 'FAT 측정(반복정밀도)',    file: true, measure: true, par: 'B' },
+  { no: 6,  name: 'FAT 측정(AWC)',           file: true, measure: true, par: 'B' },
   { no: 7,  name: '반복 Cycle 촬영',          file: true },
   { no: 8,  name: 'Full Cycle 촬영',         file: true },
   { no: 9,  name: 'X1/X2 핸드레벨 촬영',     file: true },
@@ -229,13 +237,13 @@ function json_(obj) {
 // passwords per dashboard (Script Properties):
 //   WRITE_KEY     — 통합·품질·프로젝트 관리·FAT 측정값 업로드
 //   WRITE_KEY_MFG — 제조 (제조 공정 저장 + 제조 화면의 배치 변경); falls back to WRITE_KEY when not set
-const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote']; // 제조 기타사항 = Notes id 'mfg:<id>'
+const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote', 'skipTo']; // 제조 기타사항 = Notes id 'mfg:<id>'
 function checkKey_(b) {
   const props = PropertiesService.getScriptProperties();
   const mfg = b.scope === 'mfg';
-  if (b.track === 'mfg' && !mfg) throw new Error('제조 공정은 제조 대시보드 비밀번호로 저장해야 합니다.');
+  if (b.track === 'mfg' && !mfg && b.action !== 'bulkSkipTo') throw new Error('제조 공정은 제조 대시보드 비밀번호로 저장해야 합니다.');
   if (mfg && MFG_SCOPE_ACTIONS.indexOf(b.action) < 0) throw new Error('제조 대시보드 권한으로는 할 수 없는 작업입니다.');
-  if (mfg && b.action === 'saveStep' && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
+  if (mfg && (b.action === 'saveStep' || b.action === 'skipTo') && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
   const mfgNote = b.action === 'saveNote' && /^mfg:/.test(String(b.id || ''));
   if (b.action === 'saveNote' && mfgNote !== mfg) throw new Error(mfgNote ? '제조 기타사항은 제조 대시보드 비밀번호로 저장해야 합니다.' : '품질 기타사항은 품질 비밀번호로 저장해야 합니다.');
   const k = mfg ? (props.getProperty('WRITE_KEY_MFG') || props.getProperty('WRITE_KEY')) : props.getProperty('WRITE_KEY');
@@ -594,34 +602,37 @@ function saveNote_(b) {
 // steps before stepNo: not completed -> 완료 (work done, records just not entered) ; steps from stepNo: 생략 -> 대기
 // a step counts as done when it is before the start step; starting at the last step (출하완료) means everything is done
 // first step of the parallel group containing step n (n itself when not grouped)
-function groupStart_(n) {
-  const d = STEPS[n - 1];
+function groupStart_(n, defs) {
+  defs = defs || STEPS;
+  const d = defs[n - 1];
   if (!d || !d.par) return n;
-  return Math.min.apply(null, STEPS.filter(s => s.par === d.par).map(s => s.no));
+  return Math.min.apply(null, defs.filter(s => s.par === d.par).map(s => s.no));
 }
 // starting at a grouped step keeps every step of that group open
-function startDone_(no, start) { return no < groupStart_(start) || start >= STEPS.length; }
+function startDone_(no, start, mfg) { return mfg ? no < groupStart_(start, MFG_STEPS) : (no < groupStart_(start) || start >= STEPS.length); }
+function mfgSkipDetail_(n) { return n > MFG_STEPS.length ? '제조 전 공정 완료 처리' : '제조 ' + n + '번 공정부터 진행 (이전 공정 완료 처리)'; }
 function skipDetail_(n) { return n >= STEPS.length ? n + '. ' + STEPS[STEPS.length - 1].name + ' (전 공정 완료 처리, 출하완료로 이동)' : n + '번 공정부터 진행 (이전 공정 완료 처리)'; }
-function applySkip_(st, vals, pid, n) {
+function applySkip_(st, vals, pid, n, mfg) {
   const si = SHEETS.Steps.indexOf('status');
   for (let i = 1; i < vals.length; i++) {
     if (String(vals[i][0]) !== String(pid)) continue;
     const no = Number(vals[i][1]); const s = vals[i][si];
     let ns = s;
-    if (startDone_(no, n) && s !== '완료' && s !== '생략') ns = '완료';
-    if (!startDone_(no, n) && s === '생략') ns = '대기';
+    if (startDone_(no, n, mfg) && s !== '완료' && s !== '생략') ns = '완료';
+    if (!startDone_(no, n, mfg) && s === '생략') ns = '대기';
     if (ns !== s) { st.getRange(i + 1, si + 1, 1, 1).setNumberFormat('@').setValue(ns); vals[i][si] = ns; }
   }
 }
 function skipTo_(b) {
   const n = Number(b.stepNo);
   if (!n) throw new Error('시작 공정이 필요합니다.');
-  const st = getDb_().getSheetByName('Steps');
-  applySkip_(st, st.getDataRange().getValues(), b.projectId, n);
+  const mfg = b.track === 'mfg';
+  const st = mfg ? mfgSheet_() : getDb_().getSheetByName('Steps');
+  applySkip_(st, st.getDataRange().getValues(), b.projectId, n, mfg);
   const prow = projectRow_(b.projectId);
   touchProject_(prow, b.user);
-  history_(b.user, 'skip', rowObj_('Projects', prow), null, skipDetail_(n));
-  if (n >= STEPS.length) shipRow_(prow, b.user);
+  history_(b.user, 'skip', rowObj_('Projects', prow), null, mfg ? mfgSkipDetail_(n) : skipDetail_(n));
+  if (!mfg && n >= STEPS.length) shipRow_(prow, b.user);
   return bootstrap_();
 }
 // apply the same current step to several projects at once
@@ -629,15 +640,16 @@ function bulkSkipTo_(b) {
   const n = Number(b.stepNo);
   const ids = Array.isArray(b.projectIds) ? b.projectIds.map(String) : [];
   if (!n || !ids.length) throw new Error('대상과 공정이 필요합니다.');
-  const st = getDb_().getSheetByName('Steps');
+  const mfg = b.track === 'mfg';
+  const st = mfg ? mfgSheet_() : getDb_().getSheetByName('Steps');
   const vals = st.getDataRange().getValues();
   ids.forEach(pid => {
     let prow;
     try { prow = projectRow_(pid); } catch (_) { return; }
-    applySkip_(st, vals, pid, n);
+    applySkip_(st, vals, pid, n, mfg);
     touchProject_(prow, b.user);
-    history_(b.user, 'skip', rowObj_('Projects', prow), null, '일괄 지정: ' + skipDetail_(n));
-    if (n >= STEPS.length) shipRow_(prow, b.user);
+    history_(b.user, 'skip', rowObj_('Projects', prow), null, '일괄 지정: ' + (mfg ? mfgSkipDetail_(n) : skipDetail_(n)));
+    if (!mfg && n >= STEPS.length) shipRow_(prow, b.user);
   });
   return bootstrap_();
 }
@@ -915,6 +927,32 @@ function addMfgRows_(ids, done) {
   ids.forEach(id => MFG_STEPS.forEach(s => rows.push([id, String(s.no), s.name, done ? '완료' : '대기', '', '', '', '', '', String(s.file), '', '', '', ''])));
   appendRowsText_(sh, rows);
 }
+// v2: rebuild every project's 제조 rows in the new order (records kept by step name)
+function migrateMfg2_(stamp) {
+  const ss = getDb_();
+  const sh = mfgSheet_();
+  sh.copyTo(ss).setName('MfgSteps_bak_' + stamp);
+  const head = SHEETS.MfgSteps;
+  const vals = sh.getDataRange().getValues(); vals.shift();
+  const by = {}, order = [];
+  vals.forEach(r => { const pid = String(r[0]); if (!pid) return; if (!by[pid]) { by[pid] = []; order.push(pid); } by[pid].push(r); });
+  const si = head.indexOf('status');
+  const out = [];
+  order.forEach(pid => {
+    const rows = by[pid];
+    const allDone = rows.length > 0 && rows.every(r => r[si] === '완료' || r[si] === '생략');
+    const map = {};
+    rows.forEach(r => { const no = MFG_OLD_NAMES[String(r[2]).trim()]; if (no && !map[no]) map[no] = r; });
+    MFG_STEPS.forEach(s => {
+      const r = map[s.no];
+      if (r) { const c = r.slice(0, head.length).map(v => (v instanceof Date ? fmtDate_(v) : String(v === null || v === undefined ? '' : v))); c[1] = String(s.no); c[2] = s.name; out.push(c); }
+      else out.push([pid, String(s.no), s.name, allDone ? '완료' : '대기', '', '', '', '', '', String(s.file), '', '', '', '']);
+    });
+  });
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), head.length)).clearContent();
+  if (out.length) sh.getRange(2, 1, out.length, head.length).setNumberFormat('@').setValues(out);
+  history_('system', 'steps', null, null, '제조 공정 10단계로 변경 (MFG_VERSION 2, 프로젝트 ' + order.length + '건, 백업 MfgSteps_bak_' + stamp + ')');
+}
 function migrateMfg_() {
   mfgSheet_();
   const have = {};
@@ -941,7 +979,7 @@ function migrate_() {
     const stamp = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm');
     if (props.getProperty('STEPS_VERSION') !== STEPS_VERSION) { migrateSteps_(stamp, Number(props.getProperty('STEPS_VERSION') || 0)); props.setProperty('STEPS_VERSION', STEPS_VERSION); }
     if (props.getProperty('LAYOUT_VERSION') !== LAYOUT_VERSION) { migrateLayout_(stamp); props.setProperty('LAYOUT_VERSION', LAYOUT_VERSION); }
-    if (props.getProperty('MFG_VERSION') !== MFG_VERSION) { migrateMfg_(); props.setProperty('MFG_VERSION', MFG_VERSION); }
+    if (props.getProperty('MFG_VERSION') !== MFG_VERSION) { if (!props.getProperty('MFG_VERSION')) migrateMfg_(); else migrateMfg2_(stamp); props.setProperty('MFG_VERSION', MFG_VERSION); }
   } finally {
     lock.releaseLock();
   }
