@@ -20,14 +20,15 @@
       if (d.startsWith('Resolution')) { const v = afterColon(d); if (v !== null) resolution = v; }
     }
     const points = [];
-    if (start >= 0) {
-      for (let i = start; i < lines.length; i++) {
-        const f = lines[i].split(',');
-        const x = num(f[4]), y = num(f[5]);
-        if (x !== null && y !== null) points.push({ x, y, line: i + 1 });
-      }
+    // no FirstPoint (data-only log): use every measurement row (col 4 = image time hh:mm:ss.xx, col 5/6 = X/Y)
+    const noFirst = start < 0;
+    for (let i = noFirst ? 0 : start; i < lines.length; i++) {
+      const f = lines[i].split(',');
+      if (noFirst && !/^\d{1,2}:\d{2}:\d{2}/.test((f[3] || '').trim())) continue;
+      const x = num(f[4]), y = num(f[5]);
+      if (x !== null && y !== null) points.push({ x, y, line: i + 1 });
     }
-    return { lineCount: lines.length, startLine: start >= 0 ? start + 1 : null, target, resolution, points };
+    return { lineCount: lines.length, startLine: start >= 0 ? start + 1 : null, noFirst: noFirst && points.length > 0, firstLine: points.length ? points[0].line : null, target, resolution, points };
   }
 
   // convex hull (monotone chain); the farthest point from any point is always a hull vertex
@@ -116,7 +117,7 @@
           <div class="fat-h fat-h2"><h3>로그 입력</h3>
             <label class="btn fat-file" title="파일은 이 브라우저 안에서만 읽습니다 (서버 전송 없음)"><input type="file" id="fatFile" accept=".log,.txt,.csv,text/plain" hidden>파일 선택</label>
             <button class="btn ghost" id="fatReset">데이터 초기화</button></div>
-          <textarea id="fatText" class="fat-ta" spellcheck="false" placeholder="측정 로그(.log) 내용을 여기에 붙여넣으세요.&#10;마지막 FirstPoint 줄부터 끝까지 자동으로 계산합니다.&#10;로그는 이 브라우저 안에서만 계산되고 저장·전송되지 않습니다."></textarea>
+          <textarea id="fatText" class="fat-ta" spellcheck="false" placeholder="측정 로그(.log) 내용을 여기에 붙여넣으세요.&#10;마지막 FirstPoint 줄부터 끝까지 자동으로 계산합니다 (FirstPoint가 없으면 전체 측정 데이터).&#10;로그는 이 브라우저 안에서만 계산되고 저장·전송되지 않습니다."></textarea>
           <div class="fat-meta" id="fatMeta"></div>
           <div class="fat-cond">
             <div class="fat-sub">TEST CONDITION</div>
@@ -170,8 +171,8 @@
   function renderAll() { renderMeta(); renderSum(); drawChart(); renderTable(); renderButtons(); }
   function renderMeta() {
     const m = S.meta;
-    $('#fatMeta').innerHTML = !m ? '' : !m.startLine ? '<div class="fat-bad">FirstPoint 줄을 찾지 못했습니다. 로그 전체를 붙여넣었는지 확인하세요.</div>'
-      : [['TargetArear', m.target ?? '-'], ['Resolution', m.resolution ?? '-'], ['시작 줄 (FirstPoint)', m.startLine + '번째 줄'], ['RAW 데이터 수', m.points.length], ['사용 데이터 수', S.pts.length]]
+    $('#fatMeta').innerHTML = !m ? '' : !m.points.length ? '<div class="fat-bad">측정 데이터를 찾지 못했습니다. 로그 전체를 붙여넣었는지 확인하세요.</div>'
+      : [['TargetArear', m.target ?? '-'], ['Resolution', m.resolution ?? '-'], m.startLine ? ['시작 줄 (FirstPoint)', m.startLine + '번째 줄'] : ['시작 줄', `FirstPoint 없음 · ${m.firstLine}번째 줄부터 전체`], ['RAW 데이터 수', m.points.length], ['사용 데이터 수', S.pts.length]]
         .map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('');
     $('#fatName').textContent = S.name;
   }
