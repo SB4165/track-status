@@ -934,8 +934,10 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 @media (max-width: 1000px) { .rs-grid { grid-template-columns: 1fr; } }
 .rs-in .fat-h h3 { margin-right: 0; }
 .rs-in .fat-h .fat-hint { margin-right: auto; }
-.rs-top { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 10px; padding: 12px; border-radius: 12px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); margin-bottom: 12px; }
-@media (max-width: 640px) { .rs-top { grid-template-columns: 1fr; } }
+.rs-top { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 8px; margin-bottom: 12px; } /* 272 = X + Y + 보정값 columns, so edges line up with the rows below */
+.rs-card { padding: 10px 5px; border-radius: 12px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); } /* 1px border + 5px = row padding 6px */
+.rs-base { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; }
+@media (max-width: 640px) { .rs-top { grid-template-columns: 1fr; } .rs-base { grid-template-columns: 26px minmax(0, 1fr); } }
 .rs-f { display: grid; gap: 4px; font-size: 12.5px; }
 .rs-f > span { font-weight: 800; color: var(--text); }
 .rs-f .in { height: 38px; font-size: 14px; font-variant-numeric: tabular-nums; }

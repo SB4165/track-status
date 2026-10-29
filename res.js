@@ -48,8 +48,8 @@
         <section class="fat-card rs-in">
           <div class="fat-h"><h3>Resolution 계산</h3><span class="fat-hint">좌표 로그 한 줄씩 입력 (예: 16:29:48:ManualGet,0,0)</span><button class="btn ghost" id="rsReset">초기화</button></div>
           <div class="rs-top">
-            <label class="rs-f rs-base"><span>기준 좌표</span><input class="in" id="rsBase" placeholder="예) 16:29:48:ManualGet,0,0" autocomplete="off" value="${esc(S.base)}"><em class="rs-xy" id="rsBaseXY"></em></label>
-            <label class="rs-f rs-resin"><span>Resolution</span><input class="in" id="rsRes" type="number" step="any" placeholder="예) 2.705848719" value="${esc(S.res)}"></label>
+            <div class="rs-card rs-base"><span></span><label class="rs-f"><span>기준 좌표</span><input class="in" id="rsBase" placeholder="예) 16:29:48:ManualGet,0,0" autocomplete="off" value="${esc(S.base)}"><em class="rs-xy" id="rsBaseXY"></em></label></div>
+            <div class="rs-card rs-resin"><label class="rs-f"><span>Resolution</span><input class="in" id="rsRes" type="number" step="any" placeholder="예) 2.705848719" value="${esc(S.res)}"></label></div>
           </div>
           <div class="rs-tbl">
             <div class="rs-th"><span>No</span><span>좌표 입력</span><span>X</span><span>Y</span><span>보정값</span></div>
