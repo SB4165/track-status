@@ -24,7 +24,9 @@
   const state = {
     data: null,
     names: (() => { try { return JSON.parse(LS.get('track.names') || 'null'); } catch (_) { return null; } })(),
-    tab: ['projects', 'sync', 'ncr', 'fat'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
+    tab: ['projects', 'sync', 'ncr', 'fat', 'etc'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
+    fatSub: LS.get('track.fatSub') === 'res' ? 'res' : 'fat', // FAT 테스트: FAT | Resolution 계산
+    etcSub: ['agree', 'minutes', 'refs', 'misc'].includes(LS.get('track.etcSub')) ? LS.get('track.etcSub') : 'agree',
     filter: 'active', q: '', group: '',
     openProjectId: null, openStep: null, openTrack: 'qa',
     dash: 'all', // dashboard view: 'all' (통합, read-only) | 'mfg' (제조) | 'qa' (품질)
@@ -335,8 +337,15 @@
     $('#viewProjects').hidden = state.tab !== 'projects';
     $('#viewSync').hidden = state.tab !== 'sync';
     $('#viewNcr').hidden = state.tab !== 'ncr';
-    $('#viewFat').hidden = state.tab !== 'fat';
-    if (state.tab === 'fat' && window.FatTab) window.FatTab.show();
+    const fat = state.tab === 'fat', etc = state.tab === 'etc';
+    $('#fatTabs').hidden = !fat; $$('#fatTabs [data-ftab]').forEach(b => b.classList.toggle('on', b.dataset.ftab === state.fatSub));
+    $('#viewFat').hidden = !(fat && state.fatSub === 'fat');
+    $('#viewRes').hidden = !(fat && state.fatSub === 'res');
+    if (fat && state.fatSub === 'fat' && window.FatTab) window.FatTab.show();
+    if (fat && state.fatSub === 'res' && window.ResTab) window.ResTab.show();
+    $('#etcTabs').hidden = !etc; $$('#etcTabs [data-etab]').forEach(b => b.classList.toggle('on', b.dataset.etab === state.etcSub));
+    $('#viewEtc').hidden = !etc;
+    if (etc) renderEtc();
     fitPlan();
   }
   // canvas is 1000 wide; height follows the layout (lowest item + margin)
@@ -1776,6 +1785,9 @@
       NR(2902, false, '', '08/11', 'ECP352', 'MAGNET', 'B-05-002', 1, '기구', '외관손상', '최진혁', '김나현', '대상 외 프로젝트(필터됨)'),
     ];
     const ncr = []; let ncrAt = ''; const users = ['곽승범', '김나현'];
+    const board = [{ id: 'B1', kind: 'agree', date: '2026-10-27', author: '곽승범', content: '본딩 파트 검사 기준: -28.0kPa 5초 이내 리크 0.3 이내', applyDate: '2026-11-01', createdAt: '2026-10-27 10:00' },
+      { id: 'B2', kind: 'minutes', date: '2026-10-28', author: '곽승범', attendees: '곽승범, 김나현', content: '설계 개선 논의\n1) 대체품 검토', status: '검토', createdAt: '2026-10-28 13:00' }];
+    const refs = [{ id: 'R1', title: 'FAT 체크리스트 양식', author: '곽승범', date: '2026-10-20', desc: '최신 양식', url: 'https://example.com', fileName: '', fileId: '', size: '', mime: '', createdAt: '2026-10-20 09:00' }];
     const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), users, mfgStepDefs: MSTEPS.map((n, i) => ({ no: i + 1, name: n, file: false, par: [7, 8].includes(i + 1) ? 'M' : undefined })), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13, 14, 15].includes(i + 1) ? 'A' : [4, 5, 6].includes(i + 1) ? 'B' : undefined, checks: i === 11 ? ['QC시트', 'IO시트'] : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
@@ -1789,6 +1801,8 @@
         if (p.action === 'projectNames') return wait({ ok: true, names });
         if (p.action === 'history') { const acts = String(p.actions || '').split(',').filter(Boolean); return wait({ ok: true, rows: history.filter(r => (!p.projectId || r.projectId === p.projectId) && (!acts.length || acts.includes(r.action))) }); }
         if (p.action === 'refRows') return wait({ ok: true, rows: refRows });
+        if (p.action === 'board') return wait({ ok: true, board: JSON.parse(JSON.stringify(board)), refs: JSON.parse(JSON.stringify(refs)) });
+        if (p.action === 'refFile') { const r = refs.find(x => x.id === p.id); return r ? wait({ ok: true, name: r.fileName, mime: r.mime, data: r._data || '' }) : wait({ ok: false, error: '파일 없음' }); }
         return wait(snap());
       },
       post(b) {
@@ -1819,6 +1833,11 @@
           ncrSrc.filter(r => names.includes(r.project.replace(/\s+/g, '').toUpperCase())).forEach(r => { if (!ncr.some(x => x.no === r.no)) { ncr.push(Object.assign({}, r, { syncedAt: now(), updatedAt: '', updatedBy: '' })); added++; } });
           ncrAt = now(); const j = snap(); j.ncrResult = { added, filled: 0 }; return wait(j);
         }
+        const bd = () => wait({ ok: true, board: JSON.parse(JSON.stringify(board)), refs: JSON.parse(JSON.stringify(refs)) });
+        if (b.action === 'saveBoard') { const ex = board.find(x => x.id === b.id); const f = { kind: b.kind, date: b.date, author: b.author, attendees: b.attendees, content: b.content, applyDate: b.applyDate, status: b.status, note: b.note }; if (ex) Object.assign(ex, f, { updatedAt: now(), updatedBy: b.user }); else board.push(Object.assign({ id: 'B' + Date.now(), createdAt: now(), createdBy: b.user }, f)); return bd(); }
+        if (b.action === 'deleteBoard') { const k = board.findIndex(x => x.id === b.id); if (k >= 0) board.splice(k, 1); return bd(); }
+        if (b.action === 'saveRef') { refs.push({ id: 'R' + Date.now(), title: b.title, author: b.author, date: b.date, desc: b.desc, url: b.url || '', fileName: b.fileName || '', fileId: b.data ? 'F' + Date.now() : '', size: b.data ? String(Math.floor(b.data.length * 3 / 4)) : '', mime: b.mime || '', _data: b.data || '', createdAt: now(), createdBy: b.user }); return bd(); }
+        if (b.action === 'deleteRef') { const k = refs.findIndex(x => x.id === b.id); if (k >= 0) refs.splice(k, 1); return bd(); }
         if (b.action === 'addUser') { if (!users.includes(b.name)) users.push(b.name); return wait(snap()); }
         if (b.action === 'removeUser') { const k = users.indexOf(b.name); if (k >= 0) users.splice(k, 1); return wait(snap()); }
         if (b.action === 'setNcrDone') { ncr.forEach(x => { if ((b.nos || []).includes(x.no)) { x.done = b.done !== false; x.updatedAt = now(); x.updatedBy = b.user; } }); return wait(snap()); }
@@ -1853,7 +1872,7 @@
   // FAT 탭 '측정값 업로드': P-P Diameter -> 반복정밀도(5번)/AWC(6번) 공정의 X1/X2 (other hand's value kept)
   if (window.FatTab) window.FatTab.upload = async (u) => {
     const p = activeProjects().find(x => x.projectName === u.proj);
-    if (!p) { toast('프로젝트를 찾을 수 없습니다: ' + u.proj, true); return; }
+    if (!p) { toast(`'${u.proj}'은(는) 등록된 진행중 프로젝트가 아니라 측정값을 업로드할 수 없습니다 (그래프·엑셀 내보내기는 가능)`, true); return; }
     const def = measDefs().find(d => (u.test === 'awc' ? /AWC/i : /반복정밀도/).test(d.name));
     if (!def) { toast('측정 공정을 찾을 수 없습니다', true); return; }
     const s = (p.steps || []).find(x => Number(x.stepNo) === def.no) || {};
@@ -1865,6 +1884,143 @@
     const item = { stepNo: def.no, x1: k === 'x1' ? u.value : String(s.x1 || ''), x2: k === 'x2' ? u.value : String(s.x2 || '') };
     saveMeas(p.id, [item], `측정값 업로드 완료 · ${p.projectName} ${def.no}번 ${u.hand} ${u.value}`);
   };
+
+  // ===================== 기타 탭 (협의사항 · 회의록 · 참고자료 · 기타) =====================
+  // data is loaded only when the tab opens (not part of bootstrap) so the dashboard stays fast; writes need the 품질 비밀번호
+  const ETC = { data: null, loading: false, q: '' };
+  const ETC_DEF = {
+    agree: { label: '협의사항', cols: [['date', '날짜', 'd'], ['author', '작성자', 'a'], ['content', '내용', 'c'], ['applyDate', '적용일자', 'd']] },
+    minutes: { label: '회의록', cols: [['date', '날짜', 'd'], ['author', '작성자', 'a'], ['attendees', '참석자', 'a2'], ['content', '내용', 'c'], ['status', '진행현황', 's']] },
+    refs: { label: '참고자료' },
+    misc: { label: '기타', cols: [['date', '날짜', 'd'], ['author', '작성자', 'a'], ['content', '내용', 'c'], ['note', '비고', 'n']] },
+  };
+  const MIN_ST = ['보류', '검토', '승인'];
+  const REF_MAX = 20 * 1024 * 1024;
+  const fmtSize = (n) => { n = Number(n) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : n >= 1024 ? Math.round(n / 1024) + 'KB' : n + 'B'; };
+  async function withMainKey(fn) { if (needKey('') && !(await askKey(''))) return; return fn(); }
+  async function loadEtc() {
+    ETC.loading = true;
+    try { const r = await apiGet({ action: 'board' }); ETC.data = { board: r.board || [], refs: r.refs || [] }; }
+    catch (e) { toast('기타 탭을 불러오지 못했습니다: ' + e.message, true); if (!ETC.data) ETC.data = { board: [], refs: [] }; }
+    ETC.loading = false; if (state.tab === 'etc') renderEtc();
+  }
+  function renderEtc() {
+    const v = $('#viewEtc'); const kind = state.etcSub; const def = ETC_DEF[kind];
+    if (!ETC.data) { v.innerHTML = '<div class="empty-msg">불러오는 중…</div>'; if (!ETC.loading) loadEtc(); return; }
+    const q = ETC.q.trim().toLowerCase();
+    const hit = (o) => !q || Object.values(o).some(x => String(x || '').toLowerCase().includes(q));
+    const byDate = (a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    const rows = kind === 'refs' ? ETC.data.refs.filter(hit).sort(byDate) : ETC.data.board.filter(r => r.kind === kind).filter(hit).sort(byDate);
+    const head = `<div class="toolbar etc-tb"><div class="tb-left"><div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="etcQ" placeholder="${def.label} 검색" value="${esc(ETC.q)}"></div><span class="hint">${rows.length}건 · 보기는 누구나, 작성·수정·삭제는 품질 비밀번호</span></div>
+      <div class="tb-right"><button class="btn ghost" id="etcReload">새로고침</button><button class="btn primary" id="etcNew">+ ${kind === 'refs' ? '자료 등록' : def.label + ' 작성'}</button></div></div>`;
+    let body;
+    if (!rows.length) body = `<div class="empty-msg">${q ? '검색 결과가 없습니다.' : `등록된 ${def.label}이(가) 없습니다.`}</div>`;
+    else if (kind === 'refs') {
+      body = `<div class="etc-wrap"><table class="etc-t"><thead><tr><th class="w-d">날짜</th><th>제목</th><th>첨부</th><th class="w-a">작성자</th><th>설명</th><th class="w-act"></th></tr></thead><tbody>${rows.map(r => `<tr>
+        <td class="w-d">${esc(r.date)}</td><td class="etc-title">${esc(r.title)}</td>
+        <td>${r.fileId ? `<button class="btn ghost etc-dl" data-dl="${esc(r.id)}" title="내려받기">⬇ ${esc(r.fileName)} <small>${fmtSize(r.size)}</small></button>` : ''}${r.url ? `<a class="etc-link" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">🔗 링크 열기</a>` : ''}</td>
+        <td class="w-a">${esc(r.author)}</td><td class="etc-c">${esc(r.desc)}</td>
+        <td class="w-act"><button class="ib del" data-rdel="${esc(r.id)}" title="삭제" aria-label="삭제"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg></button></td></tr>`).join('')}</tbody></table></div>`;
+    } else {
+      body = `<div class="etc-wrap"><table class="etc-t"><thead><tr>${def.cols.map(([, l, t]) => `<th class="w-${t}">${l}</th>`).join('')}<th class="w-act"></th></tr></thead><tbody>${rows.map(r => `<tr data-bid="${esc(r.id)}">${def.cols.map(([k, , t]) => `<td class="w-${t} ${t === 'c' ? 'etc-c' : ''}">${t === 's' ? `<span class="mst mst-${esc(r[k] || '검토')}">${esc(r[k] || '검토')}</span>` : esc(r[k])}</td>`).join('')}
+        <td class="w-act"><button class="ib" data-bedit="${esc(r.id)}" title="수정" aria-label="수정"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="ib del" data-bdel="${esc(r.id)}" title="삭제" aria-label="삭제"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg></button></td></tr>`).join('')}</tbody></table></div>`;
+    }
+    const focused = document.activeElement && document.activeElement.id === 'etcQ';
+    v.innerHTML = head + body;
+    if (focused) { const i = $('#etcQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  }
+  function openEtcForm(kind, row) {
+    state.openProjectId = null;
+    const r = row || {}; const def = ETC_DEF[kind];
+    const me = LS.get('track.user') || '';
+    $('#mSlot').textContent = '기타 · ' + def.label + (row ? ' 수정' : ' 작성');
+    $('#mTitle').textContent = kind === 'refs' ? '참고자료 등록' : def.label;
+    const f = (lbl, html, wide) => `<label class="f ${wide ? 'etc-wide' : ''}"><span>${lbl}</span>${html}</label>`;
+    const date = (n, val) => `<input type="date" class="in" name="${n}" value="${esc(val || '')}">`;
+    const txt = (n, val, ph) => `<input type="text" class="in" name="${n}" value="${esc(val || '')}" placeholder="${esc(ph || '')}" ${n === 'author' ? 'list="userList" autocomplete="off"' : ''}>`;
+    const area = (n, val, ph, rows) => `<textarea class="in" name="${n}" rows="${rows || 6}" placeholder="${esc(ph || '')}">${esc(val || '')}</textarea>`;
+    let fields;
+    if (kind === 'refs') fields = f('제목', txt('title', '', '자료 제목'), true) + f('날짜', date('date', today())) + f('작성자', txt('author', me))
+      + f('설명', area('desc', '', '자료 설명 (선택)', 3), true)
+      + f(`파일 <small class="hint">20MB 이하 · 구글 드라이브에 저장</small>`, `<input type="file" class="in" name="file">`, true)
+      + f('또는 링크', txt('url', '', 'https:// (큰 파일은 드라이브/NAS에 올리고 링크 등록)'), true);
+    else {
+      fields = f('날짜', date('date', r.date || today())) + f('작성자', txt('author', r.author || me));
+      if (kind === 'minutes') fields += f('참석자', txt('attendees', r.attendees, '예) 곽승범, 김나현'), true);
+      fields += f('내용', area('content', r.content, '내용을 입력하세요', 8), true);
+      if (kind === 'agree') fields += f('적용일자', date('applyDate', r.applyDate));
+      if (kind === 'minutes') fields += f('진행현황', `<select class="in" name="status">${MIN_ST.map(s => `<option ${((r.status || '검토') === s) ? 'selected' : ''}>${s}</option>`).join('')}</select>`);
+      if (kind === 'misc') fields += f('비고', area('note', r.note, '비고 (선택)', 3), true);
+    }
+    $('#mBody').innerHTML = `<div class="etc-form" data-kind="${kind}" data-id="${esc(r.id || '')}">${fields}</div>
+      <div class="row-end">${row ? '<button class="btn danger" id="etcFormDel">삭제</button>' : ''}<span style="flex:1"></span><button class="btn primary" id="etcSave">${row ? '수정 저장' : '등록'}</button></div>`;
+    openModal(true);
+  }
+  const fileB64 = (file) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = () => rej(new Error('파일을 읽지 못했습니다')); fr.readAsDataURL(file); });
+  async function etcPost(body, okMsg) {
+    body.user = getUser();
+    const j = await apiPost(body);
+    ETC.data = { board: j.board || [], refs: j.refs || [] };
+    toast(okMsg); renderEtc();
+  }
+  async function etcSave(btn) {
+    const box = $('#mBody .etc-form'); const kind = box.dataset.kind; const id = box.dataset.id;
+    const val = n => { const el = box.querySelector(`[name=${n}]`); return el ? el.value.trim() : ''; };
+    let body;
+    if (kind === 'refs') {
+      const file = (box.querySelector('[name=file]').files || [])[0];
+      if (!val('title')) { toast('제목을 입력하세요', true); return; }
+      if (!file && !val('url')) { toast('파일을 선택하거나 링크를 입력하세요', true); return; }
+      if (file && file.size > REF_MAX) { toast(`파일이 ${fmtSize(file.size)}입니다. 20MB 이하만 올릴 수 있습니다 — 드라이브/NAS에 올리고 링크로 등록하세요`, true); return; }
+      body = { action: 'saveRef', title: val('title'), date: val('date'), author: val('author'), desc: val('desc'), url: val('url') };
+      await withMainKey(async () => {
+        btn.disabled = true; btn.textContent = file ? '업로드 중…' : '등록 중…';
+        try {
+          if (file) Object.assign(body, { fileName: file.name, mime: file.type, data: await fileB64(file) });
+          await etcPost(body, '참고자료가 등록되었습니다'); closeModal();
+        } catch (e) { toast('등록 실패: ' + e.message, true); btn.disabled = false; btn.textContent = '등록'; }
+      });
+      return;
+    }
+    if (!val('content')) { toast('내용을 입력하세요', true); return; }
+    body = { action: 'saveBoard', id, kind, date: val('date'), author: val('author'), attendees: val('attendees'), content: val('content'), applyDate: val('applyDate'), status: val('status'), note: val('note') };
+    await withMainKey(async () => {
+      btn.disabled = true;
+      try { await etcPost(body, id ? '수정되었습니다' : '등록되었습니다'); closeModal(); }
+      catch (e) { toast('저장 실패: ' + e.message, true); btn.disabled = false; }
+    });
+  }
+  async function etcDelete(action, id, label) {
+    if (!confirm(`${label}을(를) 삭제할까요?${action === 'deleteRef' ? '\n첨부 파일은 구글 드라이브 휴지통으로 이동합니다 (30일 안에 복구 가능).' : ''}`)) return;
+    await withMainKey(async () => { try { await etcPost({ action, id }, '삭제되었습니다'); if (!$('#overlay').hidden && $('#mBody .etc-form')) closeModal(); } catch (e) { toast('삭제 실패: ' + e.message, true); } });
+  }
+  async function refDownload(id, btn) {
+    btn.disabled = true; toast('파일을 내려받는 중…');
+    try {
+      const r = await apiGet({ action: 'refFile', id });
+      const bin = atob(r.data); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: r.mime || 'application/octet-stream' })); a.download = r.name || 'file';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) { toast('내려받기 실패: ' + e.message, true); }
+    btn.disabled = false;
+  }
+  $('#viewEtc').addEventListener('input', e => { if (e.target.id === 'etcQ') { ETC.q = e.target.value; renderEtc(); } });
+  $('#viewEtc').addEventListener('click', e => {
+    const t = e.target;
+    if (t.closest('#etcNew')) { openEtcForm(state.etcSub); return; }
+    if (t.closest('#etcReload')) { ETC.data = null; renderEtc(); return; }
+    const dl = t.closest('[data-dl]'); if (dl) { refDownload(dl.dataset.dl, dl); return; }
+    const rd = t.closest('[data-rdel]'); if (rd) { const r = ETC.data.refs.find(x => x.id === rd.dataset.rdel); etcDelete('deleteRef', rd.dataset.rdel, `'${r ? r.title : '자료'}'`); return; }
+    const bd = t.closest('[data-bdel]'); if (bd) { etcDelete('deleteBoard', bd.dataset.bdel, ETC_DEF[state.etcSub].label + ' 글'); return; }
+    const be = t.closest('[data-bedit]') || (!t.closest('a,button,input') && t.closest('tr[data-bid]'));
+    if (be) { const id = be.dataset.bedit || be.dataset.bid; const r = ETC.data.board.find(x => x.id === id); if (r) openEtcForm(r.kind, r); }
+  });
+  $('#mBody').addEventListener('click', e => {
+    if (e.target.id === 'etcSave') { etcSave(e.target); return; }
+    if (e.target.id === 'etcFormDel') { const box = $('#mBody .etc-form'); etcDelete('deleteBoard', box.dataset.id, ETC_DEF[box.dataset.kind].label + ' 글'); }
+  });
+  $('#etcTabs').addEventListener('click', e => { const b = e.target.closest('[data-etab]'); if (!b) return; state.etcSub = b.dataset.etab; LS.set('track.etcSub', state.etcSub); ETC.q = ''; renderTabs(); });
+  $('#fatTabs').addEventListener('click', e => { const b = e.target.closest('[data-ftab]'); if (!b) return; state.fatSub = b.dataset.ftab; LS.set('track.fatSub', state.fatSub); renderTabs(); });
 
   // ===================== Init =====================
   renderUser();

@@ -115,7 +115,7 @@ const SHEETS = {
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', saveMfgStep: '제조 공정 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', board: '기타 게시판', saveMfgStep: '제조 공정 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -181,6 +181,8 @@ function doGet(e) {
       case 'projectNames': return json_({ ok: true, names: getProjectNames_(p.refresh === '1') });
       case 'history':      return json_({ ok: true, rows: getHistory_(p) });
       case 'refRows':      return json_({ ok: true, rows: getRefRows_(p.refresh === '1'), serverTime: now_() });
+      case 'board':        return json_(Object.assign({ ok: true }, boardData_()));
+      case 'refFile':      return json_(Object.assign({ ok: true }, refFile_(p.id)));
       default:             return json_(Object.assign({ ok: true }, bootstrap_()));
     }
   } catch (err) {
@@ -218,6 +220,10 @@ function doPost(e) {
       case 'setNcrDone':    result = setNcrDone_(body); break;
       case 'addUser':       result = addUser_(body); break;
       case 'removeUser':    result = removeUser_(body); break;
+      case 'saveBoard':     result = saveBoard_(body); break;
+      case 'deleteBoard':   result = deleteBoard_(body); break;
+      case 'saveRef':       result = saveRef_(body); break;
+      case 'deleteRef':     result = deleteRef_(body); break;
       default: throw new Error('Unknown action');
     }
     return json_(Object.assign({ ok: true }, result));
@@ -882,6 +888,98 @@ function removeUser_(b) {
   const row = findRow_(sh, r => String(r[0]).trim() === name);
   if (row > 0) sh.deleteRow(row);
   return bootstrap_();
+}
+
+// ===== 기타 탭: 협의사항 / 회의록 / 기타 (Board) + 참고자료 (RefFiles, 파일 본문은 Drive 폴더) =====
+// read: anyone with the site (doGet board, loaded only when the tab opens); write: WRITE_KEY (품질 비밀번호)
+const BOARD_HEAD = ['id', 'kind', 'date', 'author', 'attendees', 'content', 'applyDate', 'status', 'note', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'];
+const BOARD_KINDS = { agree: '협의사항', minutes: '회의록', misc: '기타' };
+const REFFILE_HEAD = ['id', 'title', 'author', 'date', 'desc', 'fileName', 'fileId', 'size', 'mime', 'url', 'createdAt', 'createdBy'];
+const REF_MAX_BYTES = 20 * 1024 * 1024;
+function tableSheet_(name, head) {
+  const ss = getDb_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) { sh = ss.insertSheet(name); sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  return sh;
+}
+function boardData_() {
+  tableSheet_('Board', BOARD_HEAD); tableSheet_('RefFiles', REFFILE_HEAD);
+  const strip = o => { delete o._row; Object.keys(o).forEach(k => { o[k] = String(o[k] === null || o[k] === undefined ? '' : o[k]); }); return o; };
+  return { board: readTable_('Board').map(strip), refs: readTable_('RefFiles').map(strip), serverTime: now_() };
+}
+function saveBoard_(b) {
+  const kind = String(b.kind || '');
+  if (!BOARD_KINDS[kind]) throw new Error('잘못된 분류입니다.');
+  if (!String(b.content || '').trim()) throw new Error('내용을 입력하세요.');
+  if (kind === 'minutes' && b.status && ['보류', '검토', '승인'].indexOf(b.status) < 0) throw new Error('진행현황 값이 올바르지 않습니다.');
+  const sh = tableSheet_('Board', BOARD_HEAD);
+  const t = now_();
+  const f = { kind: kind, date: b.date, author: b.author, attendees: b.attendees, content: b.content, applyDate: b.applyDate, status: b.status, note: b.note };
+  const row = b.id ? findRow_(sh, r => String(r[0]) === String(b.id)) : -1;
+  if (row > 0) {
+    const cur = sh.getRange(row, 1, 1, BOARD_HEAD.length).getValues()[0];
+    Object.keys(f).forEach(k => { cur[BOARD_HEAD.indexOf(k)] = String(f[k] || ''); });
+    cur[BOARD_HEAD.indexOf('updatedAt')] = t; cur[BOARD_HEAD.indexOf('updatedBy')] = b.user || '';
+    sh.getRange(row, 1, 1, BOARD_HEAD.length).setNumberFormat('@').setValues([cur.map(String)]);
+  } else {
+    const id = 'B' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + Math.floor(Math.random() * 90 + 10);
+    const o = Object.assign({ id: id, createdAt: t, createdBy: b.user || '', updatedAt: '', updatedBy: '' }, f);
+    appendRowsText_(sh, [BOARD_HEAD.map(k => String(o[k] || ''))]);
+  }
+  history_(b.user, 'board', null, null, BOARD_KINDS[kind] + (row > 0 ? ' 수정' : ' 등록') + ': ' + String(b.content).slice(0, 60));
+  return boardData_();
+}
+function deleteBoard_(b) {
+  const sh = tableSheet_('Board', BOARD_HEAD);
+  const row = findRow_(sh, r => String(r[0]) === String(b.id));
+  if (row > 0) { const kind = String(sh.getRange(row, 2).getValue()); sh.deleteRow(row); history_(b.user, 'board', null, null, (BOARD_KINDS[kind] || kind) + ' 삭제'); }
+  return boardData_();
+}
+// 참고자료: file (base64, ≤20MB) -> Drive folder 'Track 참고자료' (private; downloads go through refFile_) or a link only
+function refFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('REF_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (_) { /* recreate */ } }
+  const f = DriveApp.createFolder('Track 참고자료');
+  props.setProperty('REF_FOLDER_ID', f.getId());
+  return f;
+}
+function authorizeDrive() { return refFolder_().getName(); } // run once from the editor to grant Drive access
+function saveRef_(b) {
+  const title = String(b.title || '').trim();
+  if (!title) throw new Error('제목을 입력하세요.');
+  const sh = tableSheet_('RefFiles', REFFILE_HEAD);
+  const t = now_();
+  const o = { id: 'R' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + Math.floor(Math.random() * 90 + 10), title: title, author: b.author, date: b.date, desc: b.desc, fileName: '', fileId: '', size: '', mime: '', url: String(b.url || '').trim(), createdAt: t, createdBy: b.user || '' };
+  if (b.data) {
+    const bytes = Utilities.base64Decode(String(b.data));
+    if (bytes.length > REF_MAX_BYTES) throw new Error('파일은 20MB 이하만 올릴 수 있습니다.');
+    const file = refFolder_().createFile(Utilities.newBlob(bytes, b.mime || 'application/octet-stream', String(b.fileName || 'file')));
+    o.fileName = file.getName(); o.fileId = file.getId(); o.size = String(bytes.length); o.mime = b.mime || '';
+  }
+  if (!o.fileId && !o.url) throw new Error('파일 또는 링크가 필요합니다.');
+  if (o.url && !/^https?:\/\//i.test(o.url)) throw new Error('링크는 http:// 또는 https:// 로 시작해야 합니다.');
+  appendRowsText_(sh, [REFFILE_HEAD.map(k => String(o[k] || ''))]);
+  history_(b.user, 'board', null, null, '참고자료 등록: ' + title);
+  return boardData_();
+}
+function deleteRef_(b) {
+  const sh = tableSheet_('RefFiles', REFFILE_HEAD);
+  const row = findRow_(sh, r => String(r[0]) === String(b.id));
+  if (row > 0) {
+    const fid = String(sh.getRange(row, REFFILE_HEAD.indexOf('fileId') + 1).getValue());
+    if (fid) { try { DriveApp.getFileById(fid).setTrashed(true); } catch (_) { /* already gone */ } } // Drive 휴지통 (30일 복구 가능)
+    const title = String(sh.getRange(row, 2).getValue());
+    sh.deleteRow(row);
+    history_(b.user, 'board', null, null, '참고자료 삭제: ' + title);
+  }
+  return boardData_();
+}
+function refFile_(id) {
+  const r = readTable_('RefFiles').filter(x => String(x.id) === String(id))[0];
+  if (!r || !r.fileId) throw new Error('파일을 찾을 수 없습니다.');
+  const blob = DriveApp.getFileById(String(r.fileId)).getBlob();
+  return { name: String(r.fileName), mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
 }
 
 // ===== 부적합 자동 동기화 (매 정각) =====

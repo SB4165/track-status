@@ -90,9 +90,9 @@
   const TESTS = [['rep', '반복정밀도', '반복정밀도'], ['awc', 'AWC', 'AWC']]; // [key, label, file token]
   const today = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
   const TIK = 'track.fat.info';
-  const TI = { proj: '', hand: '', test: '', no: '', date: today() };
-  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
-  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
+  const TI = { proj: '', manual: false, hand: '', test: '', no: '', date: today() }; // manual: 프로젝트명 직접 입력
+  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test', 'manual'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
+  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, manual: TI.manual, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
   let PROJECTS = null; // null = not loaded yet; [{ name, label }]
   const S = { clickCheck: true, meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
   try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; S.clickCheck = c.clickCheck !== false; } catch (_) { /* storage blocked */ }
@@ -107,7 +107,7 @@
         <section class="fat-card fat-in">
           <div class="fat-h"><h3>테스트 정보</h3><span class="fat-hint">내보내기 파일명에 사용</span></div>
           <div class="fat-info" id="fatInfo">
-            <label class="fi-w"><span>프로젝트</span><select class="in" id="fiProj"></select></label>
+            <label class="fi-w"><span>프로젝트</span><span class="fi-proj"><select class="in" id="fiProj"></select><input class="in" id="fiProjIn" placeholder="프로젝트명 직접 입력 (예: MISC-MPR6 #1)" maxlength="60" autocomplete="off" hidden></span></label>
             <label><span>핸드</span><span class="seg" data-fi="hand">${HANDS.map(h => `<button type="button" data-v="${h}" class="${TI.hand === h ? 'on' : ''}">${h}</button>`).join('')}</span></label>
             <label><span>테스트</span><span class="seg" data-fi="test">${TESTS.map(([v, l]) => `<button type="button" data-v="${v}" class="${TI.test === v ? 'on' : ''}">${l}</button>`).join('')}</span></label>
             <label><span>테스트 번호</span><span class="fi-no"><em>Test</em><input class="in" id="fiNo" placeholder="001" value="${esc(TI.no)}" maxlength="20" autocomplete="off"></span></label>
@@ -332,7 +332,7 @@
     const m = infoMissing();
     document.querySelectorAll('#fatInfo .miss').forEach(x => x.classList.remove('miss'));
     if (!m.length) return true;
-    m.forEach(([id]) => { const el = id === 'hand' || id === 'test' ? $(`#fatInfo [data-fi="${id}"]`) : $('#' + id); if (el) el.classList.add('miss'); });
+    m.forEach(([id]) => { const el = id === 'hand' || id === 'test' ? $(`#fatInfo [data-fi="${id}"]`) : (id === 'fiProj' && TI.manual ? $('#fiProjIn') : $('#' + id)); if (el) el.classList.add('miss'); });
     toast('테스트 정보를 입력해 주세요: ' + m.map(x => x[1]).join(', '), true);
     $('#fatInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return false;
@@ -340,9 +340,11 @@
   function renderInfo() {
     const sel = $('#fiProj'); if (!sel) return;
     const list = PROJECTS || [];
-    if (PROJECTS && TI.proj && !list.some(x => x.name === TI.proj)) { TI.proj = ''; saveInfo(); }
+    if (!TI.manual && PROJECTS && TI.proj && !list.some(x => x.name === TI.proj)) { TI.proj = ''; saveInfo(); }
     sel.innerHTML = `<option value="">${!PROJECTS ? '프로젝트 불러오는 중…' : list.length ? `프로젝트 선택 (${list.length})` : '선택 가능한 프로젝트 없음 (배치 + 3~6번 공정)'}</option>`
-      + list.map(x => `<option value="${esc(x.name)}" ${x.name === TI.proj ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+      + list.map(x => `<option value="${esc(x.name)}" ${!TI.manual && x.name === TI.proj ? 'selected' : ''}>${esc(x.label)}</option>`).join('')
+      + `<option value="__manual" ${TI.manual ? 'selected' : ''}>✎ 직접 입력…</option>`;
+    const pin = $('#fiProjIn'); pin.hidden = !TI.manual; if (TI.manual && document.activeElement !== pin) pin.value = TI.proj;
     sel.title = '배치된 프로젝트 중 현재 공정이 3~6번(FAT 셋업 ~ FAT 측정(AWC))인 프로젝트';
     const m = infoMissing();
     $('#fiName').innerHTML = m.length ? `<span class="fi-wait">미입력: ${m.map(x => x[1]).join(', ')}</span>` : `<span>파일명</span><b>${esc(baseName())}</b>`;
@@ -438,7 +440,12 @@
     $('#fatUndo').addEventListener('click', () => { if (!S.undo.length) return; S.pts = S.undo.pop(); S.sel.clear(); recalc(); toast('되돌렸습니다'); });
     $('#fatRestore').addEventListener('click', () => { if (!S.meta) return; S.undo.push(S.pts); S.pts = S.orig.slice(); S.sel.clear(); recalc(); toast('원본 데이터로 복원했습니다'); });
     $('#fatExcelAx').addEventListener('change', e => { S.excelAxis = e.target.checked; saveCond(); drawChart(); });
-    $('#fiProj').addEventListener('change', e => { TI.proj = e.target.value; e.target.classList.remove('miss'); saveInfo(); renderInfo(); });
+    $('#fiProj').addEventListener('change', e => {
+      e.target.classList.remove('miss');
+      if (e.target.value === '__manual') { TI.manual = true; TI.proj = $('#fiProjIn').value.trim(); saveInfo(); renderInfo(); $('#fiProjIn').focus(); return; }
+      TI.manual = false; TI.proj = e.target.value; saveInfo(); renderInfo();
+    });
+    $('#fiProjIn').addEventListener('input', e => { TI.proj = e.target.value.replace(/[\\/:*?"<>|]/g, '').trim(); e.target.classList.remove('miss'); saveInfo(); renderInfo(); });
     $('#fatInfo').addEventListener('click', e => { const b = e.target.closest('.seg button'); if (!b) return; const seg = b.parentElement; TI[seg.dataset.fi] = b.dataset.v; seg.classList.remove('miss'); seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); saveInfo(); renderInfo(); });
     $('#fiNo').addEventListener('input', e => { TI.no = e.target.value.replace(/[\\/:*?"<>|]/g, ''); if (TI.no !== e.target.value) e.target.value = TI.no; e.target.classList.remove('miss'); renderInfo(); });
     $('#fiDate').addEventListener('change', e => { TI.date = e.target.value; e.target.classList.remove('miss'); renderInfo(); });

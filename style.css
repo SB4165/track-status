@@ -926,3 +926,73 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .legend .cap-btn { height: 28px; padding: 0 10px; font-size: 12px; gap: 5px; }
 .legend .cap-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 @media (max-width: 900px) { .legend .cap-btn { display: none; } }
+/* ===== sub navigation (FAT 테스트 · 기타) ===== */
+.subnav[hidden] { display: none; }
+.subnav { margin-bottom: 14px; }
+/* ===== Resolution 계산 ===== */
+.rs-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .rs-grid { grid-template-columns: 1fr; } }
+.rs-in .fat-h h3 { margin-right: 0; }
+.rs-in .fat-h .fat-hint { margin-right: auto; }
+.rs-top { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 10px; padding: 12px; border-radius: 12px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); margin-bottom: 12px; }
+@media (max-width: 640px) { .rs-top { grid-template-columns: 1fr; } }
+.rs-f { display: grid; gap: 4px; font-size: 12.5px; }
+.rs-f > span { font-weight: 800; color: var(--text); }
+.rs-f .in { height: 38px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.rs-xy { font-style: normal; font-size: 11.5px; color: var(--text-3); min-height: 14px; }
+.rs-tbl { display: grid; gap: 4px; }
+.rs-th, .rs-tr { display: grid; grid-template-columns: 34px minmax(0, 1fr) 64px 64px 128px; gap: 8px; align-items: center; }
+.rs-th { font-size: 11.5px; font-weight: 800; color: var(--text-3); padding: 0 6px 2px; }
+.rs-th span:nth-child(n+3) { text-align: right; }
+.rs-tr { padding: 4px 6px; border-radius: 9px; background: var(--surface-2); }
+.rs-tr .in { height: 32px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rs-no { font-weight: 800; color: var(--text-2); text-align: right; }
+.rs-x, .rs-y { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 13px; }
+.rs-d { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 14px; }
+.rs-d.ok { color: #157347; } .rs-d.ng { color: var(--text); } .rs-d.muted { color: var(--text-3); font-weight: 500; font-size: 11.5px; }
+.rs-tbl .in.bad, #rsBase.bad { outline: 2px solid var(--danger); outline-offset: 0; }
+.rs-hint { margin-top: 8px; font-size: 11.5px; color: var(--text-3); }
+@media (max-width: 640px) { .rs-th, .rs-tr { grid-template-columns: 26px minmax(0, 1fr) 96px; } .rs-th span:nth-child(3), .rs-th span:nth-child(4), .rs-x, .rs-y { display: none; } }
+.rs-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rs-cards .fs { position: relative; }
+.rs-v { display: inline-block; font-size: 15px; font-weight: 900; padding: 2px 12px; border-radius: 8px; }
+.rs-v.ok { color: #fff; background: #1f9d55; } .rs-v.ng { color: #fff; background: #e5484d; }
+.rs-res { margin-top: 12px; padding: 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
+.rs-res.ok { background: #e3f6ec; color: #157347; border: 1px solid #b7e4c7; font-weight: 700; }
+.rs-res.ng { background: color-mix(in srgb, #e5484d 8%, var(--surface)); border: 1px solid color-mix(in srgb, #e5484d 35%, var(--line)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.rs-res.ng > span { font-weight: 800; color: var(--text-2); }
+.rs-res.ng > b { font-size: 26px; font-weight: 900; color: #c62f34; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.rs-res.ng > small { flex-basis: 100%; color: var(--text-3); font-size: 11.5px; }
+.rs-form { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--text-2); display: grid; gap: 4px; }
+/* ===== 기타 탭 ===== */
+.etc-tb { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.etc-tb .tb-left, .etc-tb .tb-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.etc-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+.etc-t { width: 100%; border-collapse: collapse; font-size: 13px; }
+.etc-t th { text-align: left; font-size: 12px; color: var(--text-2); font-weight: 800; padding: 10px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.etc-t td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.etc-t tbody tr:last-child td { border-bottom: 0; }
+.etc-t tbody tr[data-bid] { cursor: pointer; }
+.etc-t tbody tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.etc-t .w-d { width: 100px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.etc-t .w-a { width: 90px; white-space: nowrap; }
+.etc-t .w-a2 { width: 160px; }
+.etc-t .w-s { width: 90px; }
+.etc-t .w-n { width: 22%; white-space: pre-line; color: var(--text-2); }
+.etc-t .w-act { width: 76px; white-space: nowrap; text-align: right; }
+.etc-t .etc-c { white-space: pre-line; line-height: 1.5; min-width: 240px; }
+.etc-t .etc-title { font-weight: 700; }
+.etc-dl { height: 28px; font-size: 12px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.etc-dl small { color: var(--text-3); }
+.etc-link { display: inline-block; margin-left: 6px; font-size: 12px; font-weight: 700; color: var(--accent); }
+.mst { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 10px; border-radius: 999px; }
+.mst-보류 { background: var(--st-hold-bg, #fff4d6); color: var(--st-hold, #b7791f); }
+.mst-검토 { background: var(--accent-soft); color: var(--accent); }
+.mst-승인 { background: #e3f6ec; color: #157347; }
+.etc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.etc-form .etc-wide { grid-column: 1 / -1; }
+.etc-form textarea.in { resize: vertical; min-height: 70px; line-height: 1.5; }
+@media (max-width: 640px) { .etc-form { grid-template-columns: 1fr; } }
+.rs-f .in, .rs-tr .in { width: 100%; box-sizing: border-box; min-width: 0; }
+.rs-cards .fs b .rs-v { width: fit-content; }
+.etc-t .w-act .ib { display: inline-grid; vertical-align: middle; }
