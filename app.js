@@ -100,6 +100,14 @@
   // 통합: one track per project — 제조 until 품질 has begun (품질 follows 제조); 제조 finished or pack slot -> 품질
   const liveTrack = (p) => { const qStarted = (p.steps || []).some(s => s.status !== '대기'); const mOpen = (p.mfg || []).some(s => s.status !== '완료' && s.status !== '생략');
     return !qStarted && mOpen && !isPack(p.slot) ? 'mfg' : 'qa'; };
+  // 통합 진척률 = (제조 완료 단계 + 품질 완료 단계) / (제조 + 품질 단계 수); 패킹 칸 프로젝트는 제조 완료로 간주
+  function comboInfo(p) {
+    const q = projectInfo(p);
+    const mt = (p.mfg || []).length || mfgDefs().length || 10;
+    const m = isPack(p.slot) ? { done: mt, total: mt, pct: 100 } : (p.mfg || []).length ? projectInfo(vpM(p)) : { done: 0, total: mt, pct: 0 };
+    const done = m.done + q.done, total = m.total + q.total;
+    return { done, total, pct: total ? Math.round(done / total * 100) : 0, m, q };
+  }
 
   function projectInfo(p) {
     const steps = p.steps || [];
@@ -488,6 +496,7 @@
       const issues = placed.filter(p => projectInfo(p).hasIssue || (!isPack(p.slot) && projectInfo(vpM(p)).hasIssue)).length;
       cards = [
         ['placed', '배치 프로젝트', `${placed.length}<small> / ${nSlots}칸 · 대기 ${unplaced}</small>`],
+        ['avgA', '통합 평균 진척률', avgOf(comboInfo) + '%'],
         ['avgM', '제조 평균 진척률', avgOf(p => projectInfo(vpM(p))) + '%'],
         ['avgQ', '품질 평균 진척률', avgOf(p => projectInfo(p)) + '%'],
         ['issue', '이슈 있음', issues, issues ? 'warn' : ''],
@@ -504,6 +513,22 @@
       ];
     }
     $('#stats').innerHTML = cards.map(([key, k, v, c]) => `<button type="button" class="stat ${c || ''}" data-stat="${key}" title="눌러서 프로젝트 목록 보기"><div class="k">${k}<span class="go">목록 ›</span></div><div class="v">${v}</div></button>`).join('');
+    $('#stats').classList.toggle('c5', cards.length === 5);
+    // 통합: 프로젝트 그룹별 진척률 (그룹 = 프로젝트 관리 탭의 그룹 기준)
+    let gb = $('#grpProg');
+    if (!gb) {
+      $('#stats').insertAdjacentHTML('afterend', '<div class="grp-prog" id="grpProg" hidden></div>'); gb = $('#grpProg');
+      gb.addEventListener('click', e => { const b = e.target.closest('[data-grp]'); if (b) openStatList('avgA', b.dataset.grp); });
+    }
+    gb.hidden = mode !== 'all' || !placed.length;
+    if (mode === 'all' && placed.length) {
+      const G = {}; placed.forEach(p => { const g = groupOf(p.projectName); (G[g] = G[g] || []).push(comboInfo(p)); });
+      const av = (xs, f) => Math.round(xs.reduce((a, x) => a + f(x), 0) / xs.length);
+      gb.innerHTML = '<span class="gp-h">그룹별 진척률</span>' + Object.keys(G).sort((a, b) => a.localeCompare(b)).map(g => {
+        const xs = G[g]; const a = av(xs, x => x.pct), m = av(xs, x => x.m.pct), q = av(xs, x => x.q.pct);
+        return `<button type="button" class="gp" data-grp="${esc(g)}" title="${esc(g)} · ${xs.length}건 — 눌러서 프로젝트 목록 보기"><span class="gp-n">${esc(g)}<small>${xs.length}건</small></span><span class="gp-bar"><i style="width:${a}%"></i></span><b>${a}%</b><span class="gp-s">제조 ${m}% · 품질 ${q}%</span></button>`;
+      }).join('');
+    }
 
     const card = (n) => (mode === 'all' ? allCardHTML(n, map[n]) : cardHTML(n, map[n] && vp(map[n])));
     $('#plan').classList.toggle('ro', mode === 'all');
@@ -702,20 +727,23 @@
     avg: ['평균 진척률', '배치된 프로젝트 · 진척률 높은 순', () => true],
     fixing: ['조치중', '조치중 공정이 있는 프로젝트', i => i.fixing.length > 0],
     issue: ['이슈 있음', '이슈·조치중·보류가 있는 프로젝트', i => i.hasIssue],
+    avgA: ['통합 평균 진척률', '배치된 프로젝트 · 통합 진척률 높은 순', () => true],
     avgM: ['제조 평균 진척률', '배치된 프로젝트 · 제조 진척률 높은 순', () => true],
     avgQ: ['품질 평균 진척률', '배치된 프로젝트 · 품질 진척률 높은 순', () => true],
   };
-  function openStatList(key) {
+  function openStatList(key, grp) {
     const def = STAT_DEF[key]; if (!def) return;
     state.openProjectId = null;
     const all = ALL();
     // 통합: rows carry both tracks (m = 제조, i = 품질); the list is read-only like the board
     let list = Object.values(boardMap()).map(p => { const i = projectInfo(vp(p)); const m = all && !isPack(p.slot) ? projectInfo(vpM(p)) : null; return { p, i, m }; })
-      .filter(x => all && key === 'issue' ? x.i.hasIssue || (x.m && x.m.hasIssue) : def[2](x.i));
-    const pctOf = (x) => (key === 'avgM' ? (x.m ? x.m.pct : 101) : x.i.pct);
+      .filter(x => all && key === 'issue' ? x.i.hasIssue || (x.m && x.m.hasIssue) : def[2](x.i))
+      .filter(x => !grp || groupOf(x.p.projectName) === grp);
+    const pctOf = (x) => (key === 'avgA' ? comboInfo(x.p).pct : key === 'avgM' ? (x.m ? x.m.pct : 101) : x.i.pct);
     list.sort(/^avg/.test(key) ? (a, b) => pctOf(b) - pctOf(a) || a.p.slot - b.p.slot : (a, b) => a.p.slot - b.p.slot);
     $('#mSlot').textContent = (all ? '통합 · ' : state.dash === 'mfg' ? '제조 · ' : state.dash === 'qa' ? '품질 · ' : '') + def[1];
-    $('#mTitle').textContent = `${def[0]} · ${list.length}건`;
+    $('#mTitle').textContent = grp ? `${grp} · 통합 진척률 ${list.length ? Math.round(list.reduce((a, x) => a + comboInfo(x.p).pct, 0) / list.length) : 0}% · ${list.length}건` : `${def[0]} · ${list.length}건`;
+    if (grp) $('#mSlot').textContent = '통합 · 프로젝트 그룹 · 통합 진척률 높은 순';
     const fixTxt = i => i.fixing.map(s => `${s.stepNo}. ${s.stepName}${String(s.issue || '').trim() ? ' — ' + String(s.issue).trim() : ''}`).join('\n');
     const curOf = (i) => i.cur ? i.curGroup.map(s => `<span class="cs1"><span class="t">${s.stepNo}. ${esc(s.stepName)}</span>${pill(s.status)}</span>`).join('') : `<span class="t">전 공정 완료</span>${pill('완료')}`;
     const prog = (i, lb) => `<span class="stl-p">${lb ? `<em class="stl-k">${lb}</em>` : ''}<span class="bar"><i style="width:${i.pct}%"></i></span>${i.done}/${i.total} · ${i.pct}%</span>`;
@@ -728,7 +756,7 @@
       return `<button type="button" class="stl-r" data-open="${esc(p.id)}">
         <span class="stl-s">${esc(slotName(p.slot))}</span>
         <span class="stl-m"><b>${esc(p.projectName)}</b><span class="stl-c">${cur}</span>
-          ${all ? (lt ? prog(m, '제조') : prog(i, '품질')) : prog(i)}
+          ${key === 'avgA' ? prog(comboInfo(p), '통합') : ''}${all ? (lt ? prog(m, '제조') : prog(i, '품질')) : prog(i)}
           ${extra ? `<span class="stl-x ${key === 'fixing' || key === 'issue' ? 'warn' : ''}"><em>${lbl}</em>${mdView(lineBreaks(extra))}</span>` : ''}</span>
         <span class="stl-go">›</span></button>`;
     }).join('')}</div>` : '<div class="empty-msg">해당하는 프로젝트가 없습니다.</div>';

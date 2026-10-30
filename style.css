@@ -998,3 +998,17 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .rs-f .in, .rs-tr .in { width: 100%; box-sizing: border-box; min-width: 0; }
 .rs-cards .fs b .rs-v { width: fit-content; }
 .etc-t .w-act .ib { display: inline-grid; vertical-align: middle; }
+/* 통합: 5 summary cards + 프로젝트 그룹별 진척률 */
+.stats.c5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 900px) { .stats.c5 { grid-template-columns: repeat(2, 1fr); } }
+.grp-prog { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -2px 0 12px; }
+.grp-prog[hidden] { display: none; }
+.gp-h { font-size: 12px; font-weight: 800; color: var(--text-2); margin-right: 2px; }
+.gp { display: grid; grid-template-columns: auto 84px auto; grid-template-areas: "n bar v" "s s s"; gap: 3px 8px; align-items: center; padding: 7px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); cursor: pointer; font: inherit; color: var(--text); text-align: left; }
+.gp:hover { border-color: var(--accent); }
+.gp-n { grid-area: n; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.gp-n small { margin-left: 5px; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.gp-bar { grid-area: bar; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.gp-bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.gp b { grid-area: v; font-size: 14px; font-variant-numeric: tabular-nums; }
+.gp-s { grid-area: s; font-size: 11px; color: var(--text-3); white-space: nowrap; }
