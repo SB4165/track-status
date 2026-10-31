@@ -10,7 +10,7 @@ const REF_SPREADSHEET_ID = '1ez8RBOycLocLfoG9a0scsT6gZTJS-8ZSwmFm9AaV8Vo';
 const REF_SHEET_NAME = 'SYSTEM';
 const REF_SHEET_GID = 1125892369; // fallback if the tab is renamed
 const REF_HEAD = { name: 'PROJECT NO.', type: 'TYPE', ship: 'Factory Out Date' };
-const REF_FILTER_TEXT = 'TRACK'; // checked in the TYPE column
+let REF_FILTER_TEXT = 'TRACK'; // checked in the TYPE column (개발: column O, see useWs_)
 // nonconformance (부적합) source: one-way sheet -> web; only rows whose 발주 프로젝트명 matches a track project
 const NCR_SPREADSHEET_ID = '1hWRxLYkJfPEBfItSNKv7IFuSOFcLI35b9jCHnKVRBtE';
 const NCR_SHEET_NAME = '부적합 처리현황';
@@ -41,7 +41,7 @@ const MFG_OLD_NAMES = { '자재입고': 1, '로봇조립': 2, '로봇 조립': 2
 const STATUSES = ['대기', '진행', '조치중', '완료', '보류', '생략'];
 const DONE_LIKE = ['완료', '생략'];
 
-const STEPS = [
+let STEPS = [
   { no: 1,  name: 'QC검수',                 file: false },
   { no: 2,  name: 'QC검수 조치확인',         file: false },
   { no: 3,  name: 'FAT 셋업',               file: false },
@@ -72,10 +72,10 @@ const STEPS_VERSION = '6'; // v6: step 7 renamed 반복Cycle 촬영 -> 반복 Cy
 // type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note | spec (robot spec table)
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
 const LAYOUT_VERSION = '9';
-const PACK_MIN_STEP = 12; // start of the 12·13 parallel group (패킹 서류 스캔 / 클리닝)
+let PACK_MIN_STEP = 12; // start of the 12·13 parallel group (패킹 서류 스캔 / 클리닝)
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
-const DEFAULT_LAYOUT = [
+let DEFAULT_LAYOUT = [
   ['wall-top',  'wall',    '', '',                         40,   6, 952,  18, true],
   ['wall-left', 'wall',    '', '',                           8, 235,  24, 402, true],
   ['slot-3',    'slot',     3, 'MPR, EMR, ITR',            40,  30, 152, 195, true],
@@ -98,6 +98,46 @@ const DEFAULT_LAYOUT = [
   ['note-1',    'note',    '', '기타사항',               840, 235, 152, 190, true],
   ['spec-1',    'spec',    '', 'TRACK Robot Specification', 840, 433, 152, 190, true],
 ];
+
+// ===== Workspace: 트랙 (default) | 개발 — same code, separate DB spreadsheet + step list + layout per workspace =====
+// every request passes ws ('dev' for 개발); globals are per execution, so useWs_ simply swaps them
+let WS = 'track';
+const DEV_STEPS = [
+  { no: 1,  name: 'DR',                     file: false },
+  { no: 2,  name: '제조',                   file: false },
+  { no: 3,  name: 'QC검수',                 file: false },
+  { no: 4,  name: 'QC검수 조치확인',         file: false },
+  { no: 5,  name: '반복 Cycle 촬영',          file: true },
+  { no: 6,  name: 'Full Cycle 촬영',         file: true },
+  { no: 7,  name: '패킹 서류 스캔 및 인쇄',  file: true,  par: 'A', checks: ['QC시트', 'IO시트'] },
+  { no: 8,  name: '클리닝(제조)',            file: false, par: 'A' },
+  { no: 9,  name: '패킹리스트(영업) 확인',   file: false, par: 'A' },
+  { no: 10, name: '출하사진 촬영',           file: true,  par: 'A' },
+  { no: 11, name: '패킹(서류동봉)',          file: false },
+  { no: 12, name: '출하',                   file: false },
+];
+const DEV_STEPS_VERSION = '1';
+const DEV_LAYOUT_VERSION = '1';
+// 8 equipment slots (4 x 2) + 기타사항; slot label is empty (장비 위치 is typed on the board, Notes id 'loc:<slot>')
+const DEV_LAYOUT = [
+  ['slot-1', 'slot', 1, '',   8,   8, 196, 230, true],
+  ['slot-2', 'slot', 2, '', 212,   8, 196, 230, true],
+  ['slot-3', 'slot', 3, '', 416,   8, 196, 230, true],
+  ['slot-4', 'slot', 4, '', 620,   8, 196, 230, true],
+  ['slot-5', 'slot', 5, '',   8, 246, 196, 230, true],
+  ['slot-6', 'slot', 6, '', 212, 246, 196, 230, true],
+  ['slot-7', 'slot', 7, '', 416, 246, 196, 230, true],
+  ['slot-8', 'slot', 8, '', 620, 246, 196, 230, true],
+  ['note-1', 'note', '', '기타사항', 824, 8, 168, 468, true],
+];
+const DEV_REF_COL = 15; // BACKLOG SYSTEM sheet column O: '개발'
+function useWs_(ws) {
+  WS = ws === 'dev' ? 'dev' : 'track';
+  DB_ = null;
+  if (WS === 'dev') { STEPS = DEV_STEPS; DEFAULT_LAYOUT = DEV_LAYOUT; PACK_MIN_STEP = 99; REF_FILTER_TEXT = '개발'; }
+}
+const wsKey_ = (k) => (WS === 'dev' ? 'DEV_' + k : k); // script property names per workspace
+const curLayoutVersion_ = () => (WS === 'dev' ? DEV_LAYOUT_VERSION : LAYOUT_VERSION);
 
 const SHEETS = {
   Layout:   LAYOUT_HEAD,
@@ -143,9 +183,9 @@ function setup() {
   });
   let layout = ss.getSheetByName('Layout');
   const props = PropertiesService.getScriptProperties();
-  if (props.getProperty('LAYOUT_VERSION') !== LAYOUT_VERSION) {
+  if (props.getProperty(wsKey_('LAYOUT_VERSION')) !== curLayoutVersion_()) {
     layout.getRange(2, 1, Math.max(layout.getMaxRows() - 1, 1), LAYOUT_HEAD.length).clearContent();
-    props.setProperty('LAYOUT_VERSION', LAYOUT_VERSION);
+    props.setProperty(wsKey_('LAYOUT_VERSION'), curLayoutVersion_());
   }
   if (layout.getLastRow() <= 1) {
     layout.getRange(2, 1, DEFAULT_LAYOUT.length, LAYOUT_HEAD.length).setValues(DEFAULT_LAYOUT);
@@ -163,12 +203,12 @@ let DB_ = null; // memoized per request (openById is slow)
 function getDb_() {
   if (DB_) return DB_;
   const props = PropertiesService.getScriptProperties();
-  const id = props.getProperty('DB_ID');
+  const id = props.getProperty(wsKey_('DB_ID'));
   if (id) {
     try { DB_ = SpreadsheetApp.openById(id); return DB_; } catch (e) { Logger.log('DB open failed, recreating'); }
   }
-  DB_ = SpreadsheetApp.create('트랙 업무 진행현황 DB');
-  props.setProperty('DB_ID', DB_.getId());
+  DB_ = SpreadsheetApp.create(WS === 'dev' ? '개발 업무 진행현황 DB' : '트랙 업무 진행현황 DB');
+  props.setProperty(wsKey_('DB_ID'), DB_.getId());
   return DB_;
 }
 
@@ -176,6 +216,7 @@ function getDb_() {
 function doGet(e) {
   const p = (e && e.parameter) || {};
   try {
+    useWs_(p.ws);
     migrate_();
     switch (p.action) {
       case 'projectNames': return json_({ ok: true, names: getProjectNames_(p.refresh === '1') });
@@ -196,6 +237,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents || '{}'); } catch (_) { body = {}; }
   const lock = LockService.getScriptLock();
   try {
+    useWs_(body.ws);
     migrate_();
     checkKey_(body);
     if (body.action === 'checkKey') return json_({ ok: true });
@@ -265,7 +307,7 @@ function getProjectNames_(refresh) {
 function getRefRows_(refresh) {
   const cache = CacheService.getScriptCache();
   if (!refresh) {
-    const hit = cache.get('refRows3');
+    const hit = cache.get(wsKey_('refRows3'));
     if (hit) return JSON.parse(hit);
   }
   const ref = SpreadsheetApp.openById(REF_SPREADSHEET_ID);
@@ -285,6 +327,7 @@ function getRefRows_(refresh) {
     if (c.name >= 0 && c.type >= 0) { hr = i; col = c; }
   }
   if (hr < 0) throw new Error('참조 시트에서 "' + REF_HEAD.name + '" / "' + REF_HEAD.type + '" 헤더를 찾을 수 없습니다.');
+  if (WS === 'dev') col.type = DEV_REF_COL - 1; // 개발: column O holds '개발'
   const n = last - (hr + 1);
   if (n < 1) return [];
   const read = c => c >= 0 ? sh.getRange(hr + 2, c + 1, n, 1).getDisplayValues().map(r => String(r[0] || '').trim()) : [];
@@ -297,7 +340,7 @@ function getRefRows_(refresh) {
     seen[name] = true;
     rows.push({ no: rows.length + 1, name: name, type: type, ship: ships[i] || '' });
   });
-  try { cache.put('refRows3', JSON.stringify(rows), 600); } catch (_) { /* too large */ }
+  try { cache.put(wsKey_('refRows3'), JSON.stringify(rows), 600); } catch (_) { /* too large */ }
   return rows;
 }
 
@@ -350,7 +393,8 @@ function bootstrap_() {
     });
     delete p._row;
   });
-  const users = getDb_().getSheetByName('Users') ? readTable_('Users').map(u => String(u.name || '').trim()).filter(Boolean) : [];
+  const ush = usersDb_().getSheetByName('Users');
+  const users = ush ? ush.getDataRange().getValues().slice(1).map(r => String(r[0] || '').trim()).filter(Boolean) : [];
   const notes = {};
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy, style: String(n.style || '') }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
@@ -361,8 +405,8 @@ function bootstrap_() {
     NCR_FIELDS.concat(['syncedAt', 'updatedAt', 'updatedBy']).forEach(f => { o[f] = String(r[f] === undefined ? '' : r[f]); });
     return o;
   }) : [];
-  const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty('NCR_SYNCED_AT') || '';
-  return { layout, projects, notes, users, keyRequired, keyRequiredMfg, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: MFG_STEPS, statuses: STATUSES, serverTime: now_() };
+  const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty(wsKey_('NCR_SYNCED_AT')) || '';
+  return { ws: WS, layout, projects, notes, users, keyRequired, keyRequiredMfg, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: WS === 'dev' ? [] : MFG_STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
@@ -845,7 +889,7 @@ function syncNcr_(b) {
     filled++;
   });
   appendRowsText_(sh, add);
-  PropertiesService.getScriptProperties().setProperty('NCR_SYNCED_AT', t);
+  PropertiesService.getScriptProperties().setProperty(wsKey_('NCR_SYNCED_AT'), t);
   // hourly auto sync logs only when something changed
   if (!b.auto || add.length || filled) appendRowsText_(getDb_().getSheetByName('History'), [histArr_(user, 'ncrSync', { id: '', projectName: '', slot: '' }, null, (b.auto ? '자동 · ' : '') + '신규 ' + add.length + '건 / 변경 반영 ' + filled + '건')]);
   if (b.auto) return { added: add.length, filled: filled };
@@ -869,8 +913,10 @@ function setNcrDone_(b) {
 }
 
 // ===== 사용자 목록 (상단 사용자 선택, 담당자 자동 입력) — Users sheet, shared by every PC =====
+// users are shared by every workspace (kept in the 트랙 DB)
+function usersDb_() { return WS === 'dev' ? SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('DB_ID')) : getDb_(); }
 function usersSheet_() {
-  const ss = getDb_();
+  const ss = usersDb_();
   let sh = ss.getSheetByName('Users');
   if (!sh) { sh = ss.insertSheet('Users'); sh.getRange(1, 1, 1, 3).setValues([['name', 'addedAt', 'addedBy']]).setFontWeight('bold'); sh.setFrozenRows(1); }
   return sh;
@@ -989,7 +1035,13 @@ function autoSyncNcr() {
   try { scheduleNextNcr_(); } catch (e) { console.error('schedule: ' + e); }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(60000)) return;
-  try { migrate_(); syncNcr_({ user: 'auto', auto: true }); } catch (e) { console.error('autoSyncNcr: ' + e); } finally { lock.releaseLock(); }
+  try {
+    ['track', 'dev'].forEach(ws => {
+      useWs_(ws);
+      if (ws === 'dev' && !PropertiesService.getScriptProperties().getProperty('DEV_DB_ID')) return; // 개발 DB not created yet
+      try { migrate_(); syncNcr_({ user: 'auto', auto: true }); } catch (e) { console.error('autoSyncNcr ' + ws + ': ' + e); }
+    });
+  } finally { lock.releaseLock(); }
 }
 function scheduleNextNcr_() {
   const triggers = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'autoSyncNcr');
@@ -1019,7 +1071,7 @@ function mfgSheet_() {
 }
 // done=true: 제조 already finished (quality work started / shipped) -> all 완료
 function addMfgRows_(ids, done) {
-  if (!ids.length) return;
+  if (!ids.length || WS === 'dev') return; // 개발 has no 제조 track
   const sh = mfgSheet_();
   const rows = [];
   ids.forEach(id => MFG_STEPS.forEach(s => rows.push([id, String(s.no), s.name, done ? '완료' : '대기', '', '', '', '', '', String(s.file), '', '', '', ''])));
@@ -1070,6 +1122,7 @@ function migrateMfg_() {
 // ===== Migrations (run once per version, lazily from doGet/doPost; sheets backed up first) =====
 function migrate_() {
   const props = PropertiesService.getScriptProperties();
+  if (WS === 'dev') return migrateDev_(props);
   if (props.getProperty('STEPS_VERSION') === STEPS_VERSION && props.getProperty('LAYOUT_VERSION') === LAYOUT_VERSION && props.getProperty('MFG_VERSION') === MFG_VERSION) return;
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -1083,6 +1136,21 @@ function migrate_() {
   }
 }
 
+// 개발: first access creates the 개발 DB (setup), later versions rebuild the layout / refresh step names
+function migrateDev_(props) {
+  if (props.getProperty('DEV_DB_ID') && props.getProperty('DEV_LAYOUT_VERSION') === DEV_LAYOUT_VERSION && props.getProperty('DEV_STEPS_VERSION') === DEV_STEPS_VERSION) return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const stamp = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmm');
+    if (!props.getProperty('DEV_DB_ID')) { setup(); props.setProperty('DEV_STEPS_VERSION', DEV_STEPS_VERSION); }
+    if (props.getProperty('DEV_LAYOUT_VERSION') !== DEV_LAYOUT_VERSION) { migrateLayout_(stamp); props.setProperty('DEV_LAYOUT_VERSION', DEV_LAYOUT_VERSION); }
+    if (props.getProperty('DEV_STEPS_VERSION') !== DEV_STEPS_VERSION) { migrateSteps_(stamp, 99); props.setProperty('DEV_STEPS_VERSION', DEV_STEPS_VERSION); }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // rebuild the Layout sheet from DEFAULT_LAYOUT (project slots are kept: they are stored on Projects)
 function migrateLayout_(stamp) {
   const ss = getDb_();
@@ -1091,7 +1159,7 @@ function migrateLayout_(stamp) {
   if (sh.getLastRow() > 1) sh.copyTo(ss).setName('Layout_bak_' + stamp);
   sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), LAYOUT_HEAD.length).clearContent();
   sh.getRange(2, 1, DEFAULT_LAYOUT.length, LAYOUT_HEAD.length).setValues(DEFAULT_LAYOUT);
-  history_('system', 'layout', null, null, '배치도 변경 (LAYOUT_VERSION ' + LAYOUT_VERSION + ', 백업 시트 생성)');
+  history_('system', 'layout', null, null, '배치도 변경 (LAYOUT_VERSION ' + curLayoutVersion_() + ', 백업 시트 생성)');
 }
 
 // step-list migration by row count: 14 (v1) -> 16 (v2) -> 17 (v3); every run also refreshes step names/file flags (v4 rename)
