@@ -105,10 +105,10 @@ let WS = 'track';
 const DEV_STEPS = [
   { no: 1,  name: 'DR',                     file: false },
   { no: 2,  name: '제조',                   file: false },
-  { no: 3,  name: 'QC검수',                 file: false },
-  { no: 4,  name: 'QC검수 조치확인',         file: false },
-  { no: 5,  name: '반복 Cycle 촬영',          file: true },
-  { no: 6,  name: 'Full Cycle 촬영',         file: true },
+  { no: 3,  name: 'QC검수',                 file: false, par: 'B' },
+  { no: 4,  name: 'QC검수 조치확인',         file: false, par: 'B' },
+  { no: 5,  name: '반복 Cycle 촬영',          file: true,  par: 'B' },
+  { no: 6,  name: 'Full Cycle 촬영',         file: true,  par: 'B' },
   { no: 7,  name: '패킹 서류 스캔 및 인쇄',  file: true,  par: 'A', checks: ['QC시트', 'IO시트'] },
   { no: 8,  name: '클리닝(제조)',            file: false, par: 'A' },
   { no: 9,  name: '패킹리스트(영업) 확인',   file: false, par: 'A' },
@@ -130,7 +130,8 @@ const DEV_LAYOUT = [
   ['slot-8', 'slot', 8, '', 620, 246, 196, 230, true],
   ['note-1', 'note', '', '기타사항', 824, 8, 168, 468, true],
 ];
-const DEV_REF_COL = 15; // BACKLOG SYSTEM sheet column O: '개발'
+const DEV_REF_COL = 15; // BACKLOG SYSTEM sheet column O: '개발' (filter, shown as 구분)
+const DEV_TYPE_COL = 10; // column J: equipment TYPE shown for 개발
 function useWs_(ws) {
   WS = ws === 'dev' ? 'dev' : 'track';
   DB_ = null;
@@ -307,7 +308,7 @@ function getProjectNames_(refresh) {
 function getRefRows_(refresh) {
   const cache = CacheService.getScriptCache();
   if (!refresh) {
-    const hit = cache.get(wsKey_('refRows3'));
+    const hit = cache.get((WS === 'dev' ? 'DEV_refRows4' : 'refRows3'));
     if (hit) return JSON.parse(hit);
   }
   const ref = SpreadsheetApp.openById(REF_SPREADSHEET_ID);
@@ -327,20 +328,20 @@ function getRefRows_(refresh) {
     if (c.name >= 0 && c.type >= 0) { hr = i; col = c; }
   }
   if (hr < 0) throw new Error('참조 시트에서 "' + REF_HEAD.name + '" / "' + REF_HEAD.type + '" 헤더를 찾을 수 없습니다.');
-  if (WS === 'dev') col.type = DEV_REF_COL - 1; // 개발: column O holds '개발'
+  if (WS === 'dev') { col.type = DEV_REF_COL - 1; col.dtype = DEV_TYPE_COL - 1; } // 개발: O = '개발' filter, J = TYPE
   const n = last - (hr + 1);
   if (n < 1) return [];
   const read = c => c >= 0 ? sh.getRange(hr + 2, c + 1, n, 1).getDisplayValues().map(r => String(r[0] || '').trim()) : [];
-  const names = read(col.name), types = read(col.type), ships = read(col.ship);
+  const names = read(col.name), types = read(col.type), ships = read(col.ship), dtypes = WS === 'dev' ? read(col.dtype) : [];
   const seen = {};
   const rows = [];
   names.forEach((name, i) => {
     const type = types[i] || '';
     if (!name || type.toUpperCase().indexOf(REF_FILTER_TEXT) === -1 || seen[name]) return;
     seen[name] = true;
-    rows.push({ no: rows.length + 1, name: name, type: type, ship: ships[i] || '' });
+    rows.push(WS === 'dev' ? { no: rows.length + 1, name: name, type: dtypes[i] || '', cat: type, ship: ships[i] || '' } : { no: rows.length + 1, name: name, type: type, ship: ships[i] || '' });
   });
-  try { cache.put(wsKey_('refRows3'), JSON.stringify(rows), 600); } catch (_) { /* too large */ }
+  try { cache.put((WS === 'dev' ? 'DEV_refRows4' : 'refRows3'), JSON.stringify(rows), 600); } catch (_) { /* too large */ }
   return rows;
 }
 
