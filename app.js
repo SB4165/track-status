@@ -1473,20 +1473,39 @@
 
   // ===================== Events =====================
   // workspace switch (full reload: every cache/state belongs to one workspace)
+  // workspace dropdown in the title: '트랙(Track) ▾' -> menu (fixed position, so a clipped header never cuts it off)
   function renderWs() {
     const el = $('#wsSw'); if (!el) return;
-    el.innerHTML = Object.keys(WSS).map(k => `<button type="button" class="ws-b ${k === WS ? 'on' : ''}" data-ws="${k}">${esc(WSS[k])}</button>`).join('');
+    el.innerHTML = `<button type="button" class="ws-cur" aria-haspopup="listbox" aria-expanded="false" title="사이트 전환">${esc(WSS[WS])}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div class="ws-menu" role="listbox" aria-label="사이트 선택" hidden>${Object.keys(WSS).map(k => `<button type="button" role="option" class="ws-o ${k === WS ? 'on' : ''}" aria-selected="${k === WS}" data-ws="${k}"><span class="ck">${k === WS ? '✓' : ''}</span>${esc(WSS[k])}</button>`).join('')}</div>`;
     document.title = WSS[WS];
     if (DEV) $$('.tab[data-tab="fat"],.tab[data-tab="etc"]').forEach(t => { t.hidden = true; });
   }
   renderWs();
+  const wsMenu = (open) => {
+    const cur = $('#wsSw .ws-cur'), m = $('#wsSw .ws-menu'); if (!cur || !m) return;
+    if (open) { const r = cur.getBoundingClientRect(); m.style.left = Math.max(8, r.left) + 'px'; m.style.top = (r.bottom + 6) + 'px'; }
+    m.hidden = !open; cur.setAttribute('aria-expanded', String(open)); cur.classList.toggle('open', open);
+    if (open) { const on = m.querySelector('.ws-o.on') || m.querySelector('.ws-o'); if (on) on.focus(); }
+  };
   $('#wsSw') && $('#wsSw').addEventListener('click', e => {
-    const b = e.target.closest('[data-ws]'); if (!b || b.dataset.ws === WS) return;
+    if (e.target.closest('.ws-cur')) { wsMenu($('#wsSw .ws-menu').hidden); return; }
+    const b = e.target.closest('[data-ws]'); if (!b) return;
+    wsMenu(false);
+    if (b.dataset.ws === WS) return;
     if (state.pending) { toast('저장 중입니다. 잠시 후 다시 시도하세요', true); return; }
     LS.set('track.ws', b.dataset.ws);
     const u = new URL(location.href); if (b.dataset.ws === 'track') u.searchParams.delete('ws'); else u.searchParams.set('ws', b.dataset.ws);
     location.href = u.toString();
   });
+  document.addEventListener('click', e => { if (!e.target.closest('#wsSw')) { const m = $('#wsSw .ws-menu'); if (m && !m.hidden) wsMenu(false); } });
+  document.addEventListener('keydown', e => {
+    const m = $('#wsSw .ws-menu'); if (!m || m.hidden) return;
+    if (e.key === 'Escape') { wsMenu(false); $('#wsSw .ws-cur').focus(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const os = $$('.ws-o', m); const i = os.indexOf(document.activeElement); os[(i + (e.key === 'ArrowDown' ? 1 : -1) + os.length) % os.length].focus(); }
+  });
+  window.addEventListener('resize', () => wsMenu(false));
+  window.addEventListener('scroll', () => { const m = $('#wsSw .ws-menu'); if (m && !m.hidden) wsMenu(false); }, { passive: true });
   // 개발: 장비 위치 (Notes id 'loc:<slot>') — click the strip on a card
   function openLoc(n) {
     state.openProjectId = null;

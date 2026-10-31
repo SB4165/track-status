@@ -1014,10 +1014,17 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .gp b { grid-area: v; font-size: 14px; font-variant-numeric: tabular-nums; }
 .gp-s { grid-area: s; font-size: 11px; color: var(--text-3); white-space: nowrap; }
 /* workspace switch (트랙 | 개발) in the title */
-.ws-sw { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line); vertical-align: middle; }
-.ws-b { border: 0; background: transparent; font: inherit; font-size: .78em; font-weight: 800; color: var(--text-3); padding: 4px 12px; border-radius: 8px; cursor: pointer; letter-spacing: -.01em; }
-.ws-b:hover { color: var(--text); }
-.ws-b.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.ws-sw { display: inline-flex; position: relative; vertical-align: middle; }
+.ws-cur { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: transparent; font: inherit; color: var(--text); padding: 3px 6px 3px 8px; margin-left: -8px; border-radius: 9px; cursor: pointer; letter-spacing: inherit; }
+.ws-cur:hover, .ws-cur.open { background: var(--surface-2); border-color: var(--line); }
+.ws-cur svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; color: var(--text-3); transition: transform .15s; }
+.ws-cur.open svg { transform: rotate(180deg); }
+.ws-menu { position: fixed; z-index: 80; min-width: 170px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .14); display: grid; gap: 2px; }
+.ws-menu[hidden] { display: none; }
+.ws-o { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--text-2); text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.ws-o .ck { width: 14px; flex: none; color: var(--accent); font-weight: 800; }
+.ws-o:hover, .ws-o:focus-visible { background: var(--surface-2); color: var(--text); outline: none; }
+.ws-o.on { color: var(--text); font-weight: 800; }
 /* 개발: 장비 위치 strip on each slot card (click to edit) */
 .types.loc { flex-wrap: nowrap; align-items: baseline; gap: .4em; cursor: pointer; border-radius: 6px; }
 .types.loc:hover { background: var(--accent-soft); }
