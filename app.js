@@ -15,7 +15,12 @@
     _m: {},
   };
   const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  const PACK_MIN_STEP = 12;
+  // workspace: 트랙 (default) | 개발 — ?ws=dev or remembered on this PC; the server keeps a separate DB per workspace
+  const WSS = { track: '트랙(Track)', dev: '개발' };
+  const WS = (() => { let q = null; try { q = new URLSearchParams(location.search).get('ws'); } catch (_) { /* ignore */ } const v = q || LS.get('track.ws'); return WSS[v] ? v : 'track'; })();
+  const DEV = WS === 'dev'; // 개발: 품질 dashboard + 프로젝트 관리 only, 8 slots, 장비 위치 instead of 전용 타입
+  const wsKey = (k) => (DEV ? k.replace(/^track\./, 'dev.') : k);
+  const PACK_MIN_STEP = DEV ? 99 : 12;
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -23,18 +28,19 @@
 
   const state = {
     data: null,
-    names: (() => { try { return JSON.parse(LS.get('track.names') || 'null'); } catch (_) { return null; } })(),
-    tab: ['projects', 'sync', 'ncr', 'fat', 'etc'].includes(LS.get('track.tab')) ? LS.get('track.tab') : 'board',
+    names: (() => { try { return JSON.parse(LS.get(wsKey('track.names')) || 'null'); } catch (_) { return null; } })(),
+    tab: (DEV ? ['projects', 'sync', 'ncr'] : ['projects', 'sync', 'ncr', 'fat', 'etc']).includes(LS.get(wsKey('track.tab'))) ? LS.get(wsKey('track.tab')) : 'board',
     fatSub: LS.get('track.fatSub') === 'res' ? 'res' : 'fat', // FAT 테스트: FAT | Resolution 계산
     etcSub: ['agree', 'minutes', 'refs', 'misc'].includes(LS.get('track.etcSub')) ? LS.get('track.etcSub') : 'agree',
     filter: 'active', q: '', group: '',
     openProjectId: null, openStep: null, openTrack: 'qa',
-    dash: 'all', // dashboard view: 'all' (통합, read-only) | 'mfg' (제조) | 'qa' (품질)
+    dash: DEV ? 'qa' : 'all', // dashboard view: 'all' (통합, read-only) | 'mfg' (제조) | 'qa' (품질)
     pending: 0, queue: Promise.resolve(), idMap: {}, psel: new Set(),
   };
 
   // ===================== API =====================
   async function apiGet(params) {
+    if (DEV) params = Object.assign({ ws: 'dev' }, params);
     if (DEMO) return Demo.get(params);
     const r = await fetch(API + '?' + new URLSearchParams(params).toString(), { redirect: 'follow' });
     const j = await r.json();
@@ -42,6 +48,7 @@
     return j;
   }
   async function apiPost(body) {
+    if (DEV) body.ws = 'dev';
     const key = SS.get(keyName(body.scope));
     if (key) body.key = key;
     const j = DEMO ? await Demo.post(body) : await (await fetch(API, {
@@ -78,7 +85,8 @@
   const slotTag = (n) => { const it = slotItem(n); return it && it.type === 'pack' ? 'P' + String(it.label || '').replace(/[^0-9]/g, '') : String(n); };
   const slotTypes = (n) => { const it = slotItem(n); return it && it.type === 'slot' && it.label ? String(it.label).split(/[,/]/).map(s => s.trim()).filter(Boolean) : []; };
   const typeMatch = (n, p) => slotTypes(n).some(t => String(p.projectName).toUpperCase().includes(t.toUpperCase()));
-  const typesHTML = (n) => { const t = slotTypes(n); return t.length ? `<div class="types">${t.map(x => `<i>${esc(x)}</i>`).join('')}</div>` : ''; };
+  const locOf = (n) => String((((state.data && state.data.notes) || {})['loc:' + n] || {}).content || '').trim();
+  const typesHTML = (n) => { if (DEV) { const l = locOf(n); return `<div class="types loc" data-loc="${esc(n)}" title="눌러서 장비 위치 입력"><span class="lk">장비 위치</span><span class="lv">${l ? esc(l) : '<span class="muted">미입력</span>'}</span></div>`; } const t = slotTypes(n); return t.length ? `<div class="types">${t.map(x => `<i>${esc(x)}</i>`).join('')}</div>` : ''; };
   const bySlot = () => { const m = {}; activeProjects().forEach(p => { if (p.slot) m[Number(p.slot)] = p; }); return m; };
   const byId = (d, id) => d.projects.find(x => x.id === id || x.id === state.idMap[id]);
   // project set: 'MISC-MPR7 #1' -> 'MISC-#1', 'RD-SH-13-013 EMR#1' -> 'RD-SH-13-013'
@@ -484,7 +492,8 @@
     const map = boardMap();
     const placed = Object.values(map);
     const mode = state.dash;
-    $('#dashTabs').innerHTML = DASH.map(([k, l]) => `<button type="button" class="dtab ${mode === k ? 'on' : ''}" data-dash="${k}">${l}</button>`).join('');
+    $('#dashTabs').hidden = DEV;
+    $('#dashTabs').innerHTML = DEV ? '' : DASH.map(([k, l]) => `<button type="button" class="dtab ${mode === k ? 'on' : ''}" data-dash="${k}">${l}</button>`).join('');
     $('#legend').innerHTML = d.statuses.map(s => `<span><i style="background:var(${cssVar(s)})"></i>${esc(s)}</span>`).join('')
       + `<span class="hint">${mode === 'all' ? '통합 보기 (조회 전용) — 수정은 제조·품질 탭에서' : mode === 'mfg' ? '제조 공정 · 배치는 품질과 공유됩니다' : '장비 칸을 누르면 전체 공정을 볼 수 있습니다'}</span>`;
     $('#legend').insertAdjacentHTML('beforeend', `<button type="button" class="btn cap-btn" id="capBtn" title="공정 목록 + 배치도를 이미지로 클립보드에 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>화면 복사</button>`);
@@ -695,8 +704,8 @@
     const ids = list.map(p => p.id);
     [...state.psel].forEach(id => { if (!ids.includes(id)) state.psel.delete(id); });
     const allOn = ids.length > 0 && ids.every(id => state.psel.has(id));
-    const bulkMfg = LS.get('track.bulkTrack') === 'mfg';
-    const bar = state.psel.size ? `<div class="bulkbar"><span>선택 <b>${state.psel.size}</b>건</span><select class="in" id="bulkTrack" style="width:auto"><option value="qa" ${bulkMfg ? '' : 'selected'}>품질</option><option value="mfg" ${bulkMfg ? 'selected' : ''}>제조</option></select><span class="hint">현재 공정</span><select class="in" id="bulkStep">${startOptions(Number(LS.get(bulkMfg ? 'track.bulkStepM' : 'track.bulkStep')) || 1, bulkMfg)}</select><button class="btn primary" id="bulkApply">일괄 적용</button><button class="btn ghost" id="bulkClear">선택 해제</button><span class="hint">${bulkMfg ? '선택한 제조 공정 이전은 완료 처리 · \'제조 전 공정 완료\'를 고르면 제조 공정 전체 완료' : `선택한 공정 이전은 완료 처리 · 마지막 공정(${(state.data.stepDefs || []).length}. ${esc(((state.data.stepDefs || []).slice(-1)[0] || {}).name || '')})을 고르면 전 공정 완료 + 출하완료로 이동`}</span></div>` : '';
+    const bulkMfg = !DEV && LS.get('track.bulkTrack') === 'mfg';
+    const bar = state.psel.size ? `<div class="bulkbar"><span>선택 <b>${state.psel.size}</b>건</span>${DEV ? '' : `<select class="in" id="bulkTrack" style="width:auto"><option value="qa" ${bulkMfg ? '' : 'selected'}>품질</option><option value="mfg" ${bulkMfg ? 'selected' : ''}>제조</option></select>`}<span class="hint">현재 공정</span><select class="in" id="bulkStep">${startOptions(Number(LS.get(bulkMfg ? 'track.bulkStepM' : 'track.bulkStep')) || 1, bulkMfg)}</select><button class="btn primary" id="bulkApply">일괄 적용</button><button class="btn ghost" id="bulkClear">선택 해제</button><span class="hint">${bulkMfg ? '선택한 제조 공정 이전은 완료 처리 · \'제조 전 공정 완료\'를 고르면 제조 공정 전체 완료' : `선택한 공정 이전은 완료 처리 · 마지막 공정(${(state.data.stepDefs || []).length}. ${esc(((state.data.stepDefs || []).slice(-1)[0] || {}).name || '')})을 고르면 전 공정 완료 + 출하완료로 이동`}</span></div>` : '';
     const head = bar + '<div class="prow head"><div class="ck"><input type="checkbox" data-pall="1" ' + (allOn ? 'checked' : '') + ' aria-label="전체 선택"></div><div>배치</div><div>프로젝트명</div><div>현재 공정</div><div>진척률</div><div>이슈</div><div>최종 수정</div><div></div></div>';
     $('#pTable').innerHTML = head + list.map(p => {
       const i = projectInfo(p);
@@ -801,7 +810,7 @@
     const txt = getComputedStyle(document.body).color || '#111';
     c.fillStyle = txt; c.font = `700 ${16 * k}px Pretendard, 'Malgun Gothic', sans-serif`; c.textBaseline = 'middle';
     const label = { all: '통합', mfg: '제조', qa: '품질' }[state.dash] || '';
-    c.fillText(`트랙(Track) · ${label} 대시보드`, pad, pad + headH / 2 - 4 * k);
+    c.fillText(`${WSS[WS]} · ${label} 대시보드`, pad, pad + headH / 2 - 4 * k);
     c.font = `500 ${12 * k}px Pretendard, 'Malgun Gothic', sans-serif`; c.globalAlpha = 0.6; c.textAlign = 'right';
     c.fillText(nowStr(), W - pad, pad + headH / 2 - 4 * k); c.globalAlpha = 1; c.textAlign = 'left';
     let x = pad; const y = pad + headH;
@@ -814,7 +823,7 @@
     btn.disabled = true; toast('화면을 이미지로 만드는 중…');
     const blobP = boardBlob();
     const done = () => { btn.disabled = false; };
-    const download = (b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `트랙_${({ all: '통합', mfg: '제조', qa: '품질' })[state.dash]}_${nowStr().replace(/[-: ]/g, '').slice(2, 12)}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+    const download = (b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${DEV ? '개발' : '트랙'}_${({ all: '통합', mfg: '제조', qa: '품질' })[state.dash]}_${nowStr().replace(/[-: ]/g, '').slice(2, 12)}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
     // the clipboard write starts inside the click (blob promise) so the browser keeps the user gesture
     let p;
     try { p = (navigator.clipboard && window.ClipboardItem) ? navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })]) : Promise.reject(new Error('no clipboard')); } catch (err) { p = Promise.reject(err); }
@@ -1022,7 +1031,7 @@
 
   async function loadNames(refresh) {
     const n = (await apiGet({ action: 'projectNames', refresh: refresh ? '1' : '0' })).names;
-    state.names = n; LS.set('track.names', JSON.stringify(n));
+    state.names = n; LS.set(wsKey('track.names'), JSON.stringify(n));
     return n;
   }
 
@@ -1451,8 +1460,44 @@
   });
 
   // ===================== Events =====================
+  // workspace switch (full reload: every cache/state belongs to one workspace)
+  function renderWs() {
+    const el = $('#wsSw'); if (!el) return;
+    el.innerHTML = Object.keys(WSS).map(k => `<button type="button" class="ws-b ${k === WS ? 'on' : ''}" data-ws="${k}">${esc(WSS[k])}</button>`).join('');
+    document.title = WSS[WS];
+    if (DEV) $$('.tab[data-tab="fat"],.tab[data-tab="etc"]').forEach(t => { t.hidden = true; });
+  }
+  renderWs();
+  $('#wsSw') && $('#wsSw').addEventListener('click', e => {
+    const b = e.target.closest('[data-ws]'); if (!b || b.dataset.ws === WS) return;
+    if (state.pending) { toast('저장 중입니다. 잠시 후 다시 시도하세요', true); return; }
+    LS.set('track.ws', b.dataset.ws);
+    const u = new URL(location.href); if (b.dataset.ws === 'track') u.searchParams.delete('ws'); else u.searchParams.set('ws', b.dataset.ws);
+    location.href = u.toString();
+  });
+  // 개발: 장비 위치 (Notes id 'loc:<slot>') — click the strip on a card
+  function openLoc(n) {
+    state.openProjectId = null;
+    const cur = locOf(n);
+    $('#mSlot').textContent = `${slotName(n)} · 장비 위치`;
+    $('#mTitle').textContent = '장비 위치 입력';
+    $('#mBody').innerHTML = `<label class="f"><span>장비 위치</span><input type="text" class="in" id="locIn" maxlength="40" placeholder="예) 2층 클린룸 A-3" value="${esc(cur)}"></label>
+      <div class="row-end"><span class="hint" style="margin-right:auto">비우고 저장하면 지워집니다</span><button class="btn primary" id="locSave">저장</button></div>`;
+    openModal(true);
+    const inp = $('#locIn');
+    const save = () => {
+      const content = inp.value.trim(); const id = 'loc:' + n;
+      closeModal();
+      if (content === cur) return;
+      mutate({ action: 'saveNote', id, content }, '장비 위치가 저장되었습니다', (d, user) => { d.notes = d.notes || {}; d.notes[id] = { content, style: '', updatedAt: nowStr(), updatedBy: user }; });
+    };
+    $('#locSave').addEventListener('click', save);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  }
+  $('#plan').addEventListener('click', e => { const l = e.target.closest('[data-loc]'); if (!l) return; e.preventDefault(); e.stopImmediatePropagation(); openLoc(Number(l.dataset.loc)); }, true);
   $('#dashTabs').addEventListener('click', e => { const b = e.target.closest('[data-dash]'); if (!b || b.dataset.dash === state.dash) return; state.dash = b.dataset.dash; renderBoard(); fitPlan(); });
-  $$('.tab').forEach(t => t.addEventListener('click', () => { if (t.dataset.tab === 'board' && state.dash !== 'all') { state.dash = 'all'; if (state.data) renderBoard(); } state.tab = t.dataset.tab === 'pm' ? (PM_TABS.includes(LS.get('track.pmTab')) ? LS.get('track.pmTab') : 'projects') : t.dataset.tab; LS.set('track.tab', state.tab); renderTabs(); window.scrollTo(0, 0);
+  $$('.tab').forEach(t => t.addEventListener('click', () => { if (!DEV && t.dataset.tab === 'board' && state.dash !== 'all') { state.dash = 'all'; if (state.data) renderBoard(); } state.tab = t.dataset.tab === 'pm' ? (PM_TABS.includes(LS.get('track.pmTab')) ? LS.get('track.pmTab') : 'projects') : t.dataset.tab; LS.set(wsKey('track.tab'), state.tab); renderTabs(); window.scrollTo(0, 0);
     if (state.tab === 'sync') { if (!SY.rows) loadSync(false); else renderSync(); }
     if (state.tab === 'ncr') renderNcr(); else closeNcPop();
   }));
@@ -1536,7 +1581,7 @@
   });
   $('#pTable').addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'bulkStep') { LS.set(LS.get('track.bulkTrack') === 'mfg' ? 'track.bulkStepM' : 'track.bulkStep', t.value); return; }
+    if (t.id === 'bulkStep') { LS.set(!DEV && LS.get('track.bulkTrack') === 'mfg' ? 'track.bulkStepM' : 'track.bulkStep', t.value); return; }
     if (t.id === 'bulkTrack') { LS.set('track.bulkTrack', t.value); renderProjects(); return; }
     if (t.dataset.pall) { $$('#pTable [data-pck]').forEach(c => (t.checked ? state.psel.add(c.dataset.pck) : state.psel.delete(c.dataset.pck))); renderProjects(); return; }
     if (t.dataset.pck) { if (t.checked) state.psel.add(t.dataset.pck); else state.psel.delete(t.dataset.pck); renderProjects(); return; }
@@ -1547,7 +1592,7 @@
   function bulkApply() {
     const ids = [...state.psel]; if (!ids.length) return;
     const n = Number($('#bulkStep').value);
-    if ($('#bulkTrack').value === 'mfg') {
+    if ($('#bulkTrack') && $('#bulkTrack').value === 'mfg') {
       const md = mfgDefs()[n - 1]; const all = n > mfgDefs().length;
       if (!confirm(`선택한 ${ids.length}건의 제조 공정을 '${all ? '제조 전 공정 완료' : n + '. ' + md.name}'(으)로 맞출까요?\n\n${all ? '제조 공정이 모두 완료 처리됩니다.' : n + '번 이전 제조 공정은 완료 처리되고, 기존 완료 기록은 유지됩니다.'}`)) return;
       mutate({ action: 'bulkSkipTo', projectIds: ids, stepNo: n, track: 'mfg' }, `${ids.length}건 제조 공정 적용되었습니다`, d => {
@@ -1629,7 +1674,7 @@
         const p = findProject(state.openProjectId); if (!p) return;
         NC.cf = { project: new Set([p.projectName]) }; if (NX.defect) NC.cf.defect = new Set([NX.defect]);
         NC.q = ''; NC.group = ''; NC.st = 'all'; $('#nSearch').value = '';
-        closeModal(); state.tab = 'ncr'; LS.set('track.tab', 'ncr'); renderTabs(); renderNcr(); window.scrollTo(0, 0);
+        closeModal(); state.tab = 'ncr'; LS.set(wsKey('track.tab'), 'ncr'); renderTabs(); renderNcr(); window.scrollTo(0, 0);
         return;
       }
     }
@@ -1769,11 +1814,15 @@
 
   // ===================== Demo backend =====================
   const Demo = (() => {
-    const STEPS = ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복 Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹 서류 스캔 및 인쇄', '클리닝(제조)', '패킹리스트(영업) 확인', '출하사진 촬영', '패킹(서류 동봉)', '출하'];
-    const FILE = [4, 5, 6, 7, 8, 9, 10, 12, 15];
+    const DSTEPS = ['DR', '제조', 'QC검수', 'QC검수 조치확인', '반복 Cycle 촬영', 'Full Cycle 촬영', '패킹 서류 스캔 및 인쇄', '클리닝(제조)', '패킹리스트(영업) 확인', '출하사진 촬영', '패킹(서류동봉)', '출하'];
+    const STEPS = DEV ? DSTEPS : ['QC검수', 'QC검수 조치확인', 'FAT 셋업', 'FAT 측정(진동)', 'FAT 측정(반복정밀도)', 'FAT 측정(AWC)', '반복 Cycle 촬영', 'Full Cycle 촬영', 'X1/X2 핸드레벨 촬영', '물방울 JIG 레벨 촬영', '로봇 배선 해체(제조)', '패킹 서류 스캔 및 인쇄', '클리닝(제조)', '패킹리스트(영업) 확인', '출하사진 촬영', '패킹(서류 동봉)', '출하'];
+    const FILE = DEV ? [5, 6, 7, 10] : [4, 5, 6, 7, 8, 9, 10, 12, 15];
     const MSTEPS = ['자재입고', '로봇 조립', '로봇 배선', '1차 레벨', '제어프로그램 삽입', 'I/O Check', 'DRY Cycle', 'FT (Final Test)', 'FULL Cycle', 'QC검수 전 점검'];
     const L = (id, type, slot, label, x, y, w, h) => ({ id, type, slot, label, x, y, w, h });
-    const layout = [
+    const layout = DEV ? [
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('slot-' + (i + 1), 'slot', i + 1, '', 8 + (i % 4) * 204, i < 4 ? 8 : 246, 196, 230)),
+      L('note-1', 'note', null, '기타사항', 824, 8, 168, 468),
+    ] : [
       L('wall-top', 'wall', null, '', 40, 6, 952, 18), L('wall-left', 'wall', null, '', 8, 235, 24, 402),
       ...['MPR, EMR, ITR', 'STR, ESR', 'STR, ESR', 'MPR', 'ITR, EMR', 'FER'].map((t, i) => L('slot-' + (i + 3), 'slot', i + 3, t, 40 + i * 160, 30, 152, 195)),
       L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 185), L('slot-1', 'slot', 1, 'MPR', 40, 426, 192, 185),
@@ -1793,7 +1842,7 @@
         return Object.assign(s, extra[no] || {});
       }),
       // 제조: done once quality work started; otherwise partly done (demo)
-      mfg: MSTEPS.map((n, i) => { const no = i + 1; const md = doneN >= 1 ? MSTEPS.length : (extra.m != null ? extra.m : 0); return Object.assign({ stepNo: no, stepName: n, status: no <= md ? '완료' : no === md + 1 && extra.m != null ? '진행' : '대기', startDate: '', endDate: '', owner: '', progress: no === md + 1 && extra.m != null ? '배선 작업 중' : '', issue: '', fileRequired: false }, (extra.mx || {})[no] || {}); }),
+      mfg: DEV ? [] : MSTEPS.map((n, i) => { const no = i + 1; const md = doneN >= 1 ? MSTEPS.length : (extra.m != null ? extra.m : 0); return Object.assign({ stepNo: no, stepName: n, status: no <= md ? '완료' : no === md + 1 && extra.m != null ? '진행' : '대기', startDate: '', endDate: '', owner: '', progress: no === md + 1 && extra.m != null ? '배선 작업 중' : '', issue: '', fileRequired: false }, (extra.mx || {})[no] || {}); }),
     });
     const db = [
       mk('P1', 9, names[0], 11, { 13: { status: '진행', owner: '곽승범' } }), mk('P2', 7, names[1], 6, { 7: { status: '조치중', issue: 'Cycle 중 Z축 이음 발생, 벨트 텐션 재조정 필요' } }),
@@ -1802,6 +1851,7 @@
       mk('P7', 1, names[6], 0, { 1: { status: '대기' }, m: 0 }), mk('P8', null, names[7], 2),
       Object.assign(mk('P9', null, names[8], 14), { state: 'shipped' }),
     ];
+    if (DEV) db.forEach(p => { if (p.slot > 8) p.slot = 8; });
     const NR = (no, done, action, date, project, item, partNo, qty, vendor, defect, finder, owner, content, note = '') => ({ no: String(no), done, action, date, due: '', project, item, partNo, qty: String(qty), vendor, defect, finder, owner, content, note });
     const ncrSrc = [
       NR(2808, false, '입고요청', '08/03', 'RD-SH-13-013 MPR#4', 'Ionbar', 'I-09-020', 1, '키앤스', '오입고', '박제민', '김나현', '부속품 브라켓 미입고'),
@@ -1816,7 +1866,7 @@
     const board = [{ id: 'B1', kind: 'agree', date: '2026-10-27', author: '곽승범', content: '본딩 파트 검사 기준: -28.0kPa 5초 이내 리크 0.3 이내', applyDate: '2026-11-01', createdAt: '2026-10-27 10:00' },
       { id: 'B2', kind: 'minutes', date: '2026-10-28', author: '곽승범', attendees: '곽승범, 김나현', content: '설계 개선 논의\n1) 대체품 검토', status: '검토', createdAt: '2026-10-28 13:00' }];
     const refs = [{ id: 'R1', title: 'FAT 체크리스트 양식', author: '곽승범', date: '2026-10-20', desc: '최신 양식', url: 'https://example.com', fileName: '', fileId: '', size: '', mime: '', createdAt: '2026-10-20 09:00' }];
-    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), users, mfgStepDefs: MSTEPS.map((n, i) => ({ no: i + 1, name: n, file: false, par: [7, 8].includes(i + 1) ? 'M' : undefined })), stepDefs: STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13, 14, 15].includes(i + 1) ? 'A' : [4, 5, 6].includes(i + 1) ? 'B' : undefined, checks: i === 11 ? ['QC시트', 'IO시트'] : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
+    const snap = () => JSON.parse(JSON.stringify({ ok: true, layout, notes, ncr, ncrSyncedAt: ncrAt, projects: db.filter(p => p.state !== 'removed'), users, mfgStepDefs: DEV ? [] : MSTEPS.map((n, i) => ({ no: i + 1, name: n, file: false, par: [7, 8].includes(i + 1) ? 'M' : undefined })), stepDefs: DEV ? STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), par: [7, 8, 9, 10].includes(i + 1) ? 'A' : undefined, checks: i === 6 ? ['QC시트', 'IO시트'] : undefined })) : STEPS.map((n, i) => ({ no: i + 1, name: n, file: FILE.includes(i + 1), measure: [4, 5, 6].includes(i + 1), par: [12, 13, 14, 15].includes(i + 1) ? 'A' : [4, 5, 6].includes(i + 1) ? 'B' : undefined, checks: i === 11 ? ['QC시트', 'IO시트'] : undefined })), statuses: ['대기', '진행', '조치중', '완료', '보류', '생략'], syncExcluded: excluded }));
     const wait = (v) => new Promise(r => setTimeout(() => r(v), 600));
     const log = (b, action, p, s, detail) => history.push({ at: now(), by: b.user, action, actionLabel: ({ sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제' })[action] || action, projectId: p ? p.id : '', projectName: p ? p.projectName : '', slot: p ? (p.slot || '') : '', stepNo: s ? s.stepNo : '', stepName: s ? s.stepName : '', status: s ? s.status : '', startDate: s ? s.startDate : '', endDate: s ? s.endDate : '', owner: s ? s.owner : '', progress: s ? s.progress : '', issue: s ? s.issue : '', detail: detail || '' });
     const refRows = names.concat(['MISC-ITR12 #1', 'MISC-EMR3 #1', 'RD-SH-13-014 MPR#1', 'RD-SH-13-014 ITR#2']).map((n, i) => ({ no: i + 1, name: n, type: 'IMMERSION TRACK', ship: i < 7 ? '' : i < 12 ? '26-12-31' : '26-10-' + String(10 + i) }));

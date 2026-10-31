@@ -1012,3 +1012,14 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .gp-bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
 .gp b { grid-area: v; font-size: 14px; font-variant-numeric: tabular-nums; }
 .gp-s { grid-area: s; font-size: 11px; color: var(--text-3); white-space: nowrap; }
+/* workspace switch (트랙 | 개발) in the title */
+.ws-sw { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line); vertical-align: middle; }
+.ws-b { border: 0; background: transparent; font: inherit; font-size: .78em; font-weight: 800; color: var(--text-3); padding: 4px 12px; border-radius: 8px; cursor: pointer; letter-spacing: -.01em; }
+.ws-b:hover { color: var(--text); }
+.ws-b.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+/* 개발: 장비 위치 strip on each slot card (click to edit) */
+.types.loc { flex-wrap: nowrap; align-items: baseline; gap: .4em; cursor: pointer; border-radius: 6px; }
+.types.loc:hover { background: var(--accent-soft); }
+.types.loc .lk { flex: none; font-size: .68em; font-weight: 800; color: var(--text-3); }
+.types.loc .lv { min-width: 0; font-size: .74em; font-weight: 700; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.empty .types.loc { justify-content: flex-start; }
