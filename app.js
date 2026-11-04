@@ -77,12 +77,14 @@
   const nowStr = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
   const projects = () => (state.data ? state.data.projects : []);
   const activeProjects = () => projects().filter(p => p.state === 'active');
-  const slotItems = () => (state.data ? state.data.layout.filter(l => l.type === 'slot' || l.type === 'pack').sort((a, b) => a.slot - b.slot) : []);
+  // slot = equipment, pack = 품질 packing zone, plan = 제조 배치예정존 (shown on the 제조 board only)
+  const slotItems = () => (state.data ? state.data.layout.filter(l => l.type === 'slot' || l.type === 'pack' || l.type === 'plan').sort((a, b) => a.slot - b.slot) : []);
   const slotNos = () => slotItems().map(l => Number(l.slot));
   const slotItem = (n) => slotItems().find(l => Number(l.slot) === Number(n));
   const isPack = (n) => { const it = slotItem(n); return !!it && it.type === 'pack'; };
-  const slotName = (n) => { const it = slotItem(n); return it && it.type === 'pack' ? (it.label || '패킹') : `${n}번`; };
-  const slotTag = (n) => { const it = slotItem(n); return it && it.type === 'pack' ? 'P' + String(it.label || '').replace(/[^0-9]/g, '') : String(n); };
+  const isPlan = (n) => { const it = slotItem(n); return !!it && it.type === 'plan'; };
+  const slotName = (n) => { const it = slotItem(n); return it && (it.type === 'pack' || it.type === 'plan') ? (it.label || (it.type === 'pack' ? '패킹' : '배치예정')) : `${n}번`; };
+  const slotTag = (n) => { const it = slotItem(n); return it && it.type === 'pack' ? 'P' + String(it.label || '').replace(/[^0-9]/g, '') : it && it.type === 'plan' ? '예' + String(it.label || '').replace(/[^0-9]/g, '') : String(n); };
   const slotTypes = (n) => { const it = slotItem(n); return it && it.type === 'slot' && it.label ? String(it.label).split(/[,/]/).map(s => s.trim()).filter(Boolean) : []; };
   const typeMatch = (n, p) => slotTypes(n).some(t => String(p.projectName).toUpperCase().includes(t.toUpperCase()));
   const locOf = (n) => String((((state.data && state.data.notes) || {})['loc:' + n] || {}).content || '').trim();
@@ -103,7 +105,7 @@
   const vp = (p) => (state.dash === 'mfg' ? vpM(p) : p);
   const ALL = () => state.dash === 'all';
   // projects shown on the current dashboard (제조: equipment slots only — pack slots exist only in 품질)
-  const boardMap = () => { const m = bySlot(); if (state.dash === 'mfg') Object.keys(m).forEach(k => { if (isPack(k)) delete m[k]; }); return m; };
+  const boardMap = () => { const m = bySlot(); Object.keys(m).forEach(k => { if (state.dash === 'mfg' ? isPack(k) : isPlan(k)) delete m[k]; }); return m; };
   const notStarted = (c) => !c || (Number(c.stepNo) === 1 && c.status === '대기');
   // 통합: one track per project — 제조 until 품질 has begun (품질 follows 제조); 제조 finished or pack slot -> 품질
   const liveTrack = (p) => { const qStarted = (p.steps || []).some(s => s.status !== '대기'); const mOpen = (p.mfg || []).some(s => s.status !== '완료' && s.status !== '생략');
@@ -397,7 +399,7 @@
     side.style.maxHeight = $('#plan').getBoundingClientRect().height + 'px';
     // one list per track (통합 = 제조 + 품질); count = placed projects whose current step is it (not-started projects excluded)
     const sec = (defs, info, qa, title) => {
-      const cnt = {}; Object.values(boardMap()).forEach(p => { if (state.dash === 'all' && liveTrack(p) !== (qa ? 'qa' : 'mfg')) return; const c = info(p).cur; if (notStarted(c)) return;
+      const cnt = {}; Object.values(state.dash === 'all' ? bySlot() : boardMap()).forEach(p => { if (state.dash === 'all' && (isPlan(p.slot) ? qa : liveTrack(p) !== (qa ? 'qa' : 'mfg'))) return; /* 배치예정존: 통합에서는 제조 목록 숫자로만 */ const c = info(p).cur; if (notStarted(c)) return;
         const k = parOf(c.stepNo, defs) ? groupStart(c.stepNo, defs) : c.stepNo; cnt[k] = (cnt[k] || 0) + 1; });
       const parPos = (s) => { if (!s.par) return ''; const g = defs.filter(x => x.par === s.par); return g.length < 2 ? '' : s.no === g[0].no ? 'par par-s' : s.no === g[g.length - 1].no ? 'par par-e' : 'par'; };
       const nStep = qa && defs.length > 1 && /^출하$/.test(String(defs[defs.length - 1].name).trim()) ? defs.length - 1 : defs.length; // 출하 is not counted
@@ -446,11 +448,11 @@
     return r && r.type ? ` <span class="ptype">${esc(r.type)}</span>` : '';
   };
   function cardHTML(slot, p) {
-    const pack = isPack(slot);
-    const tag = `<span class="no ${pack ? 'pk' : ''}">${esc(slotTag(slot))}</span>`;
+    const pack = isPack(slot), plan = isPlan(slot);
+    const tag = `<span class="no ${pack ? 'pk' : plan ? 'pl-no' : ''}">${esc(slotTag(slot))}</span>`;
     if (!p) {
       if (ALL()) return `<div class="card empty ro ${pack ? 'pack' : ''}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack ? esc(slotName(slot)) : '비어 있음'}</span></div>`;
-      return `<button class="card empty ${pack ? 'pack' : ''}" data-slot="${slot}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack ? `${esc(slotName(slot))}<br><small>${PACK_MIN_STEP}번 공정 이상 배치</small>` : '+ 프로젝트 배치'}</span></button>`;
+      return `<button class="card empty ${pack ? 'pack' : ''} ${plan ? 'plan' : ''}" data-slot="${slot}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack ? `${esc(slotName(slot))}<br><small>${PACK_MIN_STEP}번 공정 이상 배치</small>` : plan ? `${esc(slotName(slot))}<br><small>+ 프로젝트 배치</small>` : '+ 프로젝트 배치'}</span></button>`;
     }
     const i = projectInfo(p);
     const segs = i.countSteps.map(s => `<i class="s-${esc(s.status)}" title="${esc(s.stepNo + '. ' + s.stepName + ' · ' + s.status)}"></i>`).join('');
@@ -460,10 +462,10 @@
     const curHtml = i.cur
       ? gShow.map(s => `<div class="step ${i.curGroup.length > 1 ? 'g' : ''}"><b>${s.stepNo}. ${esc(s.stepName)}</b>${pill(s.status)}</div>`).join('') + (gMore > 0 ? `<div class="gmore" title="${esc(i.curGroup.map(s => `${s.stepNo}. ${s.stepName} (${s.status})`).join('\n'))}">병행 공정 ${gMore}개 더</div>` : '')
       : `<div class="step"><b>전 공정 완료</b>${pill('완료')}</div>`;
-    return `<button class="card ${pack ? 'pack' : ''} ${i.hasIssue ? 'has-issue' : ''}" ${state.dash === 'qa' ? 'draggable="true"' : ''} data-pid="${esc(p.id)}" data-st="${esc(i.curStatus)}" title="${esc(p.projectName)}">
+    return `<button class="card ${pack ? 'pack' : ''} ${plan ? 'plan' : ''} ${i.hasIssue ? 'has-issue' : ''}" ${state.dash === 'qa' || state.dash === 'mfg' ? 'draggable="true"' : ''} data-pid="${esc(p.id)}" data-st="${esc(i.curStatus)}" title="${esc(p.projectName)}">
       ${typesHTML(slot)}
       <div class="card-top">${tag}<span class="pname">${esc(p.projectName)}${refTypeHTML(p.projectName)}</span></div>
-      <div class="cur"><div class="lbl">${pack ? esc(slotName(slot)) + ' · ' : ''}현재 공정${i.curGroup.length > 1 ? '<span class="partag">병행</span>' : ''}</div>${curHtml}</div>
+      <div class="cur"><div class="lbl">${pack || plan ? esc(slotName(slot)) + ' · ' : ''}현재 공정${i.curGroup.length > 1 ? '<span class="partag">병행</span>' : ''}</div>${curHtml}</div>
       <div class="segs">${segs}</div>
       <div class="pct">${i.done}/${i.total} 완료 · ${i.pct}%</div>
       <div class="sum">
@@ -504,7 +506,8 @@
       + `<span class="hint">${mode === 'all' ? '통합 보기 (조회 전용) — 수정은 제조·품질 탭에서' : mode === 'mfg' ? '제조 공정 · 배치는 품질과 공유됩니다' : '장비 칸을 누르면 전체 공정을 볼 수 있습니다'}</span>`;
     $('#legend').insertAdjacentHTML('beforeend', `<button type="button" class="btn cap-btn" id="capBtn" title="공정 목록 + 배치도를 이미지로 클립보드에 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>화면 복사</button>`);
     const avgOf = (f) => placed.length ? Math.round(placed.reduce((a, p) => a + f(p).pct, 0) / placed.length) : 0;
-    const nSlots = slotItems().filter(l => mode !== 'mfg' || l.type !== 'pack').length;
+    const onBoard = (l) => (mode === 'mfg' ? l.type !== 'pack' : l.type !== 'plan');
+    const nSlots = slotItems().filter(onBoard).length;
     const unplaced = activeProjects().filter(p => !p.slot).length;
     let cards;
     if (mode === 'all') {
@@ -555,7 +558,8 @@
       if (it.type === 'label') return `<div class="pl label ${it.h >= 28 ? 'big' : ''}" style="${st}">${esc(it.label)}</div>`;
       if (it.type === 'door') return `<div class="pl door" style="${st}" title="${esc(it.label || '출입문')}"><svg viewBox="0 0 40 24" aria-hidden="true"><path d="M3 22h34"/><path d="M6 22V6"/><path d="M6 6a16 16 0 0 1 16 16"/></svg><span>${esc(it.label || '출입문')}</span></div>`;
       if (it.type === 'pack') return mode === 'mfg' ? '' : `<div class="pl" ${mode === 'qa' ? `data-pack="${it.slot}"` : ''} style="${st}">${card(it.slot)}</div>`;
-      if (it.type === 'slot') return `<div class="pl" style="${st}">${card(it.slot)}</div>`;
+      if (it.type === 'plan') return mode === 'mfg' ? `<div class="pl" data-drop="${it.slot}" style="${st}">${card(it.slot)}</div>` : '';
+      if (it.type === 'slot') return `<div class="pl" ${mode === 'mfg' ? `data-drop="${it.slot}"` : ''} style="${st}">${card(it.slot)}</div>`;
       if (it.type === 'note') return `<div class="pl" style="${st}">${noteHTML(it)}</div>`;
       if (it.type === 'spec') return `<div class="pl" style="${st}">${specHTML(it)}</div>`;
       return '';
@@ -567,7 +571,7 @@
     $('#slotList').innerHTML = (notes.length ? '<div class="sec-t" style="grid-column:1/-1">기타사항</div>' + notes.map(noteHTML).join('') : '')
       + specs.map(s => `<div style="grid-column:1/-1">${specHTML(s)}</div>`).join('')
       + '<div class="sec-t" style="grid-column:1/-1">배치 번호순</div>'
-      + slotItems().filter(l => mode !== 'mfg' || l.type !== 'pack').map(l => card(Number(l.slot))).join('');
+      + slotItems().filter(onBoard).map(l => card(Number(l.slot))).join('');
   }
 
   // robot specification table (layout type 'spec')
@@ -1573,18 +1577,28 @@
   $('#plan').addEventListener('click', onCardClick);
   // drag a placed card onto a packing slot -> confirm -> move
   $('#plan').addEventListener('dragstart', e => {
-    const c = e.target.closest && e.target.closest('.card[data-pid]'); if (!c || state.dash !== 'qa') return;
+    const c = e.target.closest && e.target.closest('.card[data-pid]'); if (!c || (state.dash !== 'qa' && state.dash !== 'mfg')) return;
     e.dataTransfer.setData('text/plain', c.dataset.pid); e.dataTransfer.effectAllowed = 'move';
     state.dragPid = c.dataset.pid; c.classList.add('dragging'); $('#plan').classList.add('dragmode');
   });
   $('#plan').addEventListener('dragend', () => { state.dragPid = null; $$('#plan .dragging,#plan .drop-on').forEach(x => x.classList.remove('dragging', 'drop-on')); $('#plan').classList.remove('dragmode'); });
   $('#plan').addEventListener('dragover', e => {
-    const t = e.target.closest('[data-pack]'); if (!t || !state.dragPid) return;
+    const t = e.target.closest('[data-pack],[data-drop]'); if (!t || !state.dragPid) return;
     e.preventDefault(); e.dataTransfer.dropEffect = 'move';
     $$('#plan .drop-on').forEach(x => { if (x !== t) x.classList.remove('drop-on'); }); t.classList.add('drop-on');
   });
-  $('#plan').addEventListener('dragleave', e => { const t = e.target.closest('[data-pack]'); if (t && !t.contains(e.relatedTarget)) t.classList.remove('drop-on'); });
+  $('#plan').addEventListener('dragleave', e => { const t = e.target.closest('[data-pack],[data-drop]'); if (t && !t.contains(e.relatedTarget)) t.classList.remove('drop-on'); });
   $('#plan').addEventListener('drop', e => {
+    // 제조: equipment slot <-> 배치예정존 (occupied target asks to swap out via checkSlot)
+    const d = e.target.closest('[data-drop]');
+    if (d && state.dragPid) {
+      e.preventDefault();
+      const pid = e.dataTransfer.getData('text/plain') || state.dragPid; const slot = Number(d.dataset.drop);
+      $$('#plan .drop-on').forEach(x => x.classList.remove('drop-on'));
+      const p = findProject(pid); if (!p || Number(p.slot) === slot) return;
+      confirmBox(isPlan(slot) ? '배치예정존으로 이동하시겠습니까?' : '장비 칸으로 이동하시겠습니까?', `${p.projectName} : ${p.slot ? slotName(p.slot) : '미배치'} → ${slotName(slot)}`).then(ok => { if (ok) setSlot(p, slot); });
+      return;
+    }
     const t = e.target.closest('[data-pack]'); if (!t) return;
     e.preventDefault();
     const pid = e.dataTransfer.getData('text/plain') || state.dragPid; const slot = Number(t.dataset.pack);
@@ -1860,6 +1874,7 @@
       L('slot-2', 'slot', 2, 'MPR, ITR', 40, 235, 192, 185), L('slot-1', 'slot', 1, 'MPR', 40, 426, 192, 185),
       L('door-1', 'door', null, '출입문', 40, 617, 192, 20),
       ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('pack-' + (i + 1), 'pack', 9 + i, '패킹 ' + (i + 1), 244 + (i % 4) * 148, i < 4 ? 235 : 433, 140, 190)),
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => L('plan-' + (i + 1), 'plan', 17 + i, '배치예정 ' + (i + 1), 244 + (i % 4) * 148, i < 4 ? 235 : 433, 140, 190)),
       L('note-1', 'note', null, '기타사항', 840, 235, 152, 190), L('spec-1', 'spec', null, 'TRACK Robot Specification', 840, 433, 152, 190),
     ];
     const notes = { 'note-1': { content: '10/24(금) 클린룸 정기 점검 예정\n메인 전기 차단기 위치 이동 작업 대기', updatedAt: '2026-10-21 09:00', updatedBy: '곽승범' } };

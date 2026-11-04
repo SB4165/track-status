@@ -1031,3 +1031,11 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .types.loc .lk { flex: none; font-size: .68em; font-weight: 800; color: var(--text-3); }
 .types.loc .lv { min-width: 0; font-size: .74em; font-weight: 700; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card.empty .types.loc { justify-content: flex-start; }
+/* 제조: 배치예정존 (slots 17-24, 제조 board only) */
+.no.pl-no { width: auto; min-width: 1.9em; padding: 0 .45em; border-radius: 999px; background: #0e8a7e; }
+.card.plan { border-color: color-mix(in srgb, #0e8a7e 35%, var(--line)); }
+.card.empty.plan { border-color: color-mix(in srgb, #0e8a7e 45%, var(--line-strong)); background: color-mix(in srgb, #0e8a7e 6%, transparent); }
+.card.empty.plan .no { background: color-mix(in srgb, #0e8a7e 55%, var(--line-strong)); }
+.card.empty.plan .add small { font-weight: 500; font-size: .9em; color: var(--text-3); }
+#plan.dragmode [data-drop] > .card { outline: 2px dashed color-mix(in srgb, #0e8a7e 55%, transparent); outline-offset: 2px; }
+#plan [data-drop].drop-on > .card { outline: 3px solid #0e8a7e; outline-offset: 2px; background: color-mix(in srgb, #0e8a7e 10%, var(--surface)); }

@@ -71,7 +71,7 @@ const STEPS_VERSION = '6'; // v6: step 7 renamed 반복Cycle 촬영 -> 반복 Cy
 // slot label = dedicated equipment types for that position (comma separated, shown for reference)
 // type: slot (equipment) | pack (packing area, step>=PACK_MIN_STEP only) | wall | fixture | label | door | note | spec (robot spec table)
 // LAYOUT_VERSION: bump to rebuild the Layout sheet from DEFAULT_LAYOUT on next setup()
-const LAYOUT_VERSION = '9';
+const LAYOUT_VERSION = '10'; // v10: 제조 배치예정존 (plan, slots 17-24)
 let PACK_MIN_STEP = 12; // start of the 12·13 parallel group (패킹 서류 스캔 / 클리닝)
 // Edit the "Layout" sheet to relocate; set active=FALSE to hide a row.
 const LAYOUT_HEAD = ['id', 'type', 'slot', 'label', 'x', 'y', 'w', 'h', 'active'];
@@ -95,6 +95,15 @@ let DEFAULT_LAYOUT = [
   ['pack-6',    'pack',    14, '패킹 6',                 392, 433, 140, 190, true],
   ['pack-7',    'pack',    15, '패킹 7',                 540, 433, 140, 190, true],
   ['pack-8',    'pack',    16, '패킹 8',                 688, 433, 140, 190, true],
+  // 제조 배치예정존: same area as the packing zone, shown on the 제조 board only (slots 17-24)
+  ['plan-1',    'plan',    17, '배치예정 1',             244, 235, 140, 190, true],
+  ['plan-2',    'plan',    18, '배치예정 2',             392, 235, 140, 190, true],
+  ['plan-3',    'plan',    19, '배치예정 3',             540, 235, 140, 190, true],
+  ['plan-4',    'plan',    20, '배치예정 4',             688, 235, 140, 190, true],
+  ['plan-5',    'plan',    21, '배치예정 5',             244, 433, 140, 190, true],
+  ['plan-6',    'plan',    22, '배치예정 6',             392, 433, 140, 190, true],
+  ['plan-7',    'plan',    23, '배치예정 7',             540, 433, 140, 190, true],
+  ['plan-8',    'plan',    24, '배치예정 8',             688, 433, 140, 190, true],
   ['note-1',    'note',    '', '기타사항',               840, 235, 152, 190, true],
   ['spec-1',    'spec',    '', 'TRACK Robot Specification', 840, 433, 152, 190, true],
 ];
