@@ -295,13 +295,13 @@ function json_(obj) {
 // passwords per dashboard (Script Properties):
 //   WRITE_KEY     — 통합·품질·프로젝트 관리·FAT 측정값 업로드
 //   WRITE_KEY_MFG — 제조 (제조 공정 저장 + 제조 화면의 배치 변경); falls back to WRITE_KEY when not set
-const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote', 'skipTo']; // 제조 기타사항 = Notes id 'mfg:<id>'
+const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote', 'skipTo', 'saveSummary', 'saveMeasure']; // 제조 기타사항 = Notes id 'mfg:<id>'
 function checkKey_(b) {
   const props = PropertiesService.getScriptProperties();
   const mfg = b.scope === 'mfg';
   if (b.track === 'mfg' && !mfg && b.action !== 'bulkSkipTo') throw new Error('제조 공정은 제조 대시보드 비밀번호로 저장해야 합니다.');
   if (mfg && MFG_SCOPE_ACTIONS.indexOf(b.action) < 0) throw new Error('제조 대시보드 권한으로는 할 수 없는 작업입니다.');
-  if (mfg && (b.action === 'saveStep' || b.action === 'skipTo') && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
+  if (mfg && ['saveStep', 'skipTo', 'saveSummary', 'saveMeasure'].indexOf(b.action) >= 0 && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
   const mfgNote = b.action === 'saveNote' && /^mfg:/.test(String(b.id || ''));
   if (b.action === 'saveNote' && mfgNote !== mfg) throw new Error(mfgNote ? '제조 기타사항은 제조 대시보드 비밀번호로 저장해야 합니다.' : '품질 기타사항은 품질 비밀번호로 저장해야 합니다.');
   const k = mfg ? (props.getProperty('WRITE_KEY_MFG') || props.getProperty('WRITE_KEY')) : props.getProperty('WRITE_KEY');
@@ -395,7 +395,13 @@ function bootstrap_() {
   });
   const mfgBy = {};
   if (getDb_().getSheetByName('MfgSteps')) readTable_('MfgSteps').forEach(s => { (mfgBy[s.projectId] = mfgBy[s.projectId] || []).push(s); });
+  // 제조 요약 / 제조 FAT 측정값 (separate from 품질; sheets created on first save)
+  const mSum = {}, mMeas = {};
+  if (getDb_().getSheetByName('MfgSummary')) readTable_('MfgSummary').forEach(r => { mSum[String(r.projectId)] = r; });
+  if (getDb_().getSheetByName('MfgMeasures')) readTable_('MfgMeasures').forEach(r => { const o = (mMeas[String(r.projectId)] = mMeas[String(r.projectId)] || {}); o[Number(r.stepNo)] = { x1: String(r.x1 === undefined ? '' : r.x1), x2: String(r.x2 === undefined ? '' : r.x2) }; });
   projects.forEach(p => {
+    const ms = mSum[p.id]; p.mfgSumProg = ms ? String(ms.summaryProgress || '') : ''; p.mfgSumIssue = ms ? String(ms.summaryIssue || '') : '';
+    p.mfgMeas = mMeas[p.id] || {};
     p.mfg = (mfgBy[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => { delete s._row; delete s.projectId; s.stepNo = Number(s.stepNo); return s; });
     p.slot = p.slot === '' ? null : Number(p.slot);
     p.steps = (byProj[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => {
@@ -591,10 +597,12 @@ function saveChecks_(pid, no, checks, user) {
 function saveMeasure_(b) {
   const items = Array.isArray(b.items) ? b.items : [];
   if (!b.projectId || !items.length) throw new Error('측정값이 없습니다.');
+  const mfg = b.track === 'mfg'; // 제조 FAT 측정값: MfgMeasures (same columns, kept apart from 품질)
   const ss = getDb_();
-  let sh = ss.getSheetByName('Measures');
+  const shName = mfg ? 'MfgMeasures' : 'Measures';
+  let sh = ss.getSheetByName(shName);
   if (!sh) {
-    sh = ss.insertSheet('Measures');
+    sh = ss.insertSheet(shName);
     sh.getRange(1, 1, 1, SHEETS.Measures.length).setValues([SHEETS.Measures]).setFontWeight('bold');
     sh.setFrozenRows(1);
   }
@@ -611,11 +619,21 @@ function saveMeasure_(b) {
     det.push(no + '. ' + def.name + ' X1=' + (vals[2] || '-') + ', X2=' + (vals[3] || '-'));
   });
   touchProject_(prow, b.user);
-  history_(b.user, 'measure', proj, null, det.join(' / '));
+  history_(b.user, 'measure', proj, null, (mfg ? '제조 · ' : '') + det.join(' / '));
   return bootstrap_();
 }
 
 function saveSummary_(b) {
+  if (b.track === 'mfg') { // 제조 요약: MfgSummary (one row per project)
+    const prow = projectRow_(b.projectId);
+    const sh = tableSheet_('MfgSummary', ['projectId', 'summaryProgress', 'summaryIssue', 'updatedAt', 'updatedBy']);
+    const vals = [String(b.projectId), String(b.summaryProgress || ''), String(b.summaryIssue || ''), now_(), b.user || ''];
+    const row = findRow_(sh, r => String(r[0]) === String(b.projectId));
+    if (row < 0) appendText_(sh, vals); else sh.getRange(row, 1, 1, vals.length).setNumberFormat('@').setValues([vals]);
+    touchProject_(prow, b.user);
+    history_(b.user, 'saveSummary', rowObj_('Projects', prow), null, '제조 · 진행: ' + (b.summaryProgress || '-') + ' / 이슈: ' + (b.summaryIssue || '-'));
+    return bootstrap_();
+  }
   const ps = getDb_().getSheetByName('Projects');
   const row = projectRow_(b.projectId);
   const h = SHEETS.Projects;

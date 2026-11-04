@@ -1039,3 +1039,7 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .card.empty.plan .add small { font-weight: 500; font-size: .9em; color: var(--text-3); }
 #plan.dragmode [data-drop] > .card { outline: 2px dashed color-mix(in srgb, #0e8a7e 55%, transparent); outline-offset: 2px; }
 #plan [data-drop].drop-on > .card { outline: 3px solid #0e8a7e; outline-offset: 2px; background: color-mix(in srgb, #0e8a7e 10%, var(--surface)); }
+.mfg-left { display: grid; align-content: start; gap: 4px; }
+.mfg-left .f-lbl { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.mfg-left .mfg-pg { min-height: 28px; gap: 8px; }
+.mfg-left .mfg-pg b { font-size: 12px; }

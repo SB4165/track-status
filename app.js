@@ -101,7 +101,7 @@
   const findProject = (id) => projects().find(p => p.id === id || p.id === state.idMap[id]);
   // 제조 track: same project, steps = p.mfg (no manual summaries); placement is shared with 품질
   const mfgDefs = () => (state.data && state.data.mfgStepDefs) || [];
-  const vpM = (p) => Object.assign({}, p, { steps: p.mfg || [], summaryProgress: '', summaryIssue: '', _mfg: true });
+  const vpM = (p) => Object.assign({}, p, { steps: p.mfg || [], summaryProgress: p.mfgSumProg || '', summaryIssue: p.mfgSumIssue || '', _mfg: true }); // 제조 요약 = MfgSummary
   const vp = (p) => (state.dash === 'mfg' ? vpM(p) : p);
   const ALL = () => state.dash === 'all';
   // projects shown on the current dashboard (제조: equipment slots only — pack slots exist only in 품질)
@@ -334,8 +334,13 @@
     dl.innerHTML = ((state.data && state.data.users) || []).map(n => `<option value="${esc(n)}">`).join('');
     if (!$('#overlay').hidden && $('#mTitle').textContent === '사용자 선택') openUsers();
     // FAT test project list: placed projects whose current step is 3~6 (FAT 셋업 ~ FAT 측정(AWC))
-    if (window.FatTab) window.FatTab.setProjects(Object.values(bySlot()).map(p => ({ p, i: projectInfo(p) })).filter(x => x.i.curNo >= 3 && x.i.curNo <= 6)
-      .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · ${i.cur.stepNo}. ${i.cur.stepName}` })));
+    // 품질: placed + current step 3~6 / 제조: placed (equipment or 배치예정존, not packing) with 제조 steps left
+    if (window.FatTab) window.FatTab.setProjects({
+      qa: Object.values(bySlot()).map(p => ({ p, i: projectInfo(p) })).filter(x => x.i.curNo >= 3 && x.i.curNo <= 6)
+        .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · ${i.cur.stepNo}. ${i.cur.stepName}` })),
+      mfg: Object.values(bySlot()).filter(p => !isPack(p.slot)).map(p => ({ p, i: projectInfo(vpM(p)) })).filter(x => x.i.cur)
+        .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · 제조 ${i.cur.stepNo}. ${i.cur.stepName}` })),
+    });
     syncLabel();
     // re-render the open project only for local changes (server syncs must not wipe what the user is typing)
     if (!fromServer && state.openProjectId && !$('#overlay').hidden) {
@@ -868,19 +873,22 @@
   const measDefs = () => ((state.data && state.data.stepDefs) || []).filter(d => d.measure);
   const isMeasureQ = (no) => measDefs().some(d => d.no === Number(no));
   const isMeasure = isMeasureQ;
+  // 제조 FAT 측정값 are kept apart from 품질 (p.mfgMeas[no] = {x1, x2})
+  const measSrc = (p, no, mfg) => (mfg ? ((p.mfgMeas || {})[no] || {}) : ((p.steps || []).find(x => Number(x.stepNo) === Number(no)) || {}));
   const measInputs = (no, s) => ['x1', 'x2'].map(k => `<label class="mx"><span>${k.toUpperCase()}</span><input type="text" inputmode="decimal" data-mx="${no}" data-k="${k}" value="${esc(s[k] || '')}" placeholder="값"></label>`).join('');
   // changed measurement values in the open project window -> [{stepNo, x1, x2}]
-  function measChanges(p, onlyNo) {
+  function measChanges(p, onlyNo, mfg) {
     return measDefs().filter(d => !onlyNo || d.no === onlyNo).map(d => {
-      const s = (p.steps || []).find(x => Number(x.stepNo) === d.no) || {};
+      const s = measSrc(p, d.no, mfg);
       const get = k => { const el = $(`#mBody [data-mx="${d.no}"][data-k="${k}"]`); return el ? el.value.trim() : String(s[k] || ''); };
       return { stepNo: d.no, x1: get('x1'), x2: get('x2'), old: [String(s.x1 || ''), String(s.x2 || '')] };
     }).filter(m => m.x1 !== m.old[0] || m.x2 !== m.old[1]).map(m => ({ stepNo: m.stepNo, x1: m.x1, x2: m.x2 }));
   }
-  function saveMeas(pid, items, msg) {
-    return mutate({ action: 'saveMeasure', projectId: pid, items }, msg, (d, user) => {
+  function saveMeas(pid, items, msg, mfg) {
+    return mutate(Object.assign({ action: 'saveMeasure', projectId: pid, items }, mfg ? { track: 'mfg' } : {}), msg, (d, user) => {
       const p = byId(d, pid); if (!p) return;
-      items.forEach(it => { const s = p.steps.find(x => Number(x.stepNo) === it.stepNo); if (s) Object.assign(s, { x1: it.x1, x2: it.x2 }); });
+      if (mfg) { p.mfgMeas = p.mfgMeas || {}; items.forEach(it => { p.mfgMeas[it.stepNo] = { x1: it.x1, x2: it.x2 }; }); }
+      else items.forEach(it => { const s = p.steps.find(x => Number(x.stepNo) === it.stepNo); if (s) Object.assign(s, { x1: it.x1, x2: it.x2 }); });
       p.updatedAt = nowStr();
     });
   }
@@ -947,6 +955,14 @@
       </div>`;
     }).join('');
   }
+  // 진행사항/이슈사항 요약 fields + FAT 측정값 box (품질 and 제조 windows share the markup; ids are unique per open window)
+  const sumFieldsHTML = (i) => `<label class="f"><span>진행사항 요약 <span class="autotag ${i.manualProg ? 'man' : ''}">${i.manualProg ? '직접 작성' : '자동 초안'}</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="진행사항 요약" id="sumProg" data-auto="${esc(i.autoProg)}" data-ph="진행 요약">${md2html(i.prog)}</div></label>
+          <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="이슈사항 요약" id="sumIssue" data-ph="이슈 없음" data-auto="${esc(i.autoIssue)}">${md2html(i.issue)}</div></label>`;
+  const sumBtnsHTML = (i) => `<div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>`;
+  const measBoxHTML = (p, mfg) => (measDefs().length ? `<div class="measbox">
+          <div class="mh"><b>FAT 측정값</b><span class="hint">${mfg ? '제조 측정값 — 품질 측정값과 따로 기록됩니다 (FAT 테스트 탭에서 \'제조\'로 업로드 가능)' : 'X1 · X2 직접 입력 가능 — 입력값은 각 공정의 측정값으로 함께 기록됩니다'}</span><button class="btn" id="saveMeas">측정값 저장</button></div>
+          <div class="mgrid">${measDefs().map(dd => `<div class="mi"><div class="mt"><span class="mn">${dd.no}</span>${esc(String(dd.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1') || dd.name)}</div>${measInputs(dd.no, measSrc(p, dd.no, mfg))}</div>`).join('')}</div>
+        </div>` : '');
   function renderProject(p, keepScroll) {
     const body = $('#mBody');
     const scroll = keepScroll ? body.scrollTop : 0;
@@ -962,17 +978,13 @@
       <div class="box">
         <div class="grid3 sumgrid">
           <label class="f">배치${active ? `<select class="in" id="mSlotSel">${slotOptions(p.slot, p)}</select>` : `<input type="text" value="출하완료" disabled>`}</label>
-          <label class="f"><span>진행사항 요약 <span class="autotag ${i.manualProg ? 'man' : ''}">${i.manualProg ? '직접 작성' : '자동 초안'}</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="진행사항 요약" id="sumProg" data-auto="${esc(i.autoProg)}" data-ph="진행 요약">${md2html(i.prog)}</div></label>
-          <label class="f"><span>이슈사항 요약 <span class="autotag ${i.manualIssue ? 'man' : ''}">${i.manualIssue ? '직접 작성' : '자동 초안'}</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="이슈사항 요약" id="sumIssue" data-ph="이슈 없음" data-auto="${esc(i.autoIssue)}">${md2html(i.issue)}</div></label>
+          ${sumFieldsHTML(i)}
         </div>
-        ${measDefs().length ? `<div class="measbox">
-          <div class="mh"><b>FAT 측정값</b><span class="hint">X1 · X2 직접 입력 가능 — 입력값은 각 공정의 측정값으로 함께 기록됩니다</span><button class="btn" id="saveMeas">측정값 저장</button></div>
-          <div class="mgrid">${measDefs().map(dd => { const s = (p.steps || []).find(x => Number(x.stepNo) === dd.no) || {}; return `<div class="mi"><div class="mt"><span class="mn">${dd.no}</span>${esc(String(dd.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1') || dd.name)}</div>${measInputs(dd.no, s)}</div>`; }).join('')}</div>
-        </div>` : ''}
+        ${measBoxHTML(p, false)}
         ${ncrBoxHTML(p)}
         <div class="row-end between" style="flex-wrap:wrap">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="skipSel" style="width:auto;padding:6px 8px">${startOptions(Math.min(i.curNo, (p.steps || []).length))}</select><button class="btn" id="skipBtn" title="선택한 공정 이전의 미완료 공정을 완료 처리">이 공정부터 진행</button></div>
-          <div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>
+          ${sumBtnsHTML(i)}
         </div>
         <div class="hint" style="margin-top:6px">자동 초안은 공정 기록이 바뀔 때마다 새로 작성됩니다. 내용을 고쳐 저장하면 '직접 작성'으로 고정됩니다.</div>
       </div>
@@ -1002,12 +1014,17 @@
     $('#mTitle').textContent = p.projectName;
     body.innerHTML = `
       <div class="box">
-        <div class="grid2 sumgrid">
-          <label class="f">배치${active ? `<select class="in" id="mSlotSel">${slotOptions(p.slot, p, false, true)}</select>` : `<input type="text" value="출하완료" disabled>`}</label>
-          <div class="f"><span>제조 진척률</span><div class="mfg-pg"><span class="bar"><i style="width:${i.pct}%"></i></span><b>${i.done}/${i.total} · ${i.pct}%</b></div></div>
+        <div class="grid3 sumgrid">
+          <div class="mfg-left"><label class="f">배치${active ? `<select class="in" id="mSlotSel">${slotOptions(p.slot, p, false, true)}</select>` : `<input type="text" value="출하완료" disabled>`}</label>
+            <div class="f-lbl">제조 진척률</div><div class="mfg-pg"><span class="bar"><i style="width:${i.pct}%"></i></span><b>${i.done}/${i.total} · ${i.pct}%</b></div></div>
+          ${sumFieldsHTML(i)}
         </div>
-        ${active ? `<div class="row-end" style="justify-content:flex-start;flex-wrap:wrap;gap:6px;margin-top:10px"><span class="hint">시작 공정</span><select class="in" id="mSkipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo, true)}</select><button class="btn" id="mSkipBtn" title="선택한 공정 이전의 미완료 제조 공정을 완료 처리">이 공정부터 진행</button></div>` : ''}
-        <div class="hint" style="margin-top:6px">배치는 품질 대시보드와 공유됩니다 (패킹 칸은 품질에서만 배치).</div>
+        ${measBoxHTML(p, true)}
+        <div class="row-end between" style="flex-wrap:wrap">
+          ${active ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">시작 공정</span><select class="in" id="mSkipSel" style="width:auto;padding:6px 8px">${startOptions(i.curNo, true)}</select><button class="btn" id="mSkipBtn" title="선택한 공정 이전의 미완료 제조 공정을 완료 처리">이 공정부터 진행</button></div>` : '<span></span>'}
+          ${sumBtnsHTML(i)}
+        </div>
+        <div class="hint" style="margin-top:6px">배치는 품질 대시보드와 공유됩니다 (패킹 칸은 품질에서만 배치). 요약 자동 초안은 제조 공정 기록으로 작성됩니다.</div>
       </div>
       ${ncrBoxHTML(p)}
       <div class="section-t">제조 공정 <span class="hint">공정을 눌러 상세 입력</span></div>
@@ -1658,6 +1675,13 @@
   $('#mClose').addEventListener('click', closeModal);
   // modals close only with the X button (no backdrop click / Escape)
   $('#mSave').addEventListener('click', saveAll);
+  // 진행/이슈 요약 저장 (mfg = 제조 요약, 제조 비밀번호)
+  function saveSum(pid, sp, si, msg, mfg) {
+    return mutate(Object.assign({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, mfg ? { track: 'mfg' } : {}), msg, d => {
+      const p = byId(d, pid); if (!p) return;
+      if (mfg) { p.mfgSumProg = sp; p.mfgSumIssue = si; } else { p.summaryProgress = sp; p.summaryIssue = si; }
+    });
+  }
   // top save: collect every changed field first (a mutation re-renders the modal), then queue the saves
   function saveAll() {
     const sc = state.openTrack === 'mfg' ? 'mfg' : '';
@@ -1667,12 +1691,9 @@
     if (state.openTrack === 'all') return;
     const jobs = [];
     const keep = (el) => { const v = fieldVal(el).trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
-    const sp = mfg ? '' : keep($('#sumProg')), si = mfg ? '' : keep($('#sumIssue'));
-    if (!mfg && (sp !== String(p.summaryProgress || '').trim() || si !== String(p.summaryIssue || '').trim())) {
-      jobs.push(() => mutate({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, null, d => {
-        const x = byId(d, pid); if (x) { x.summaryProgress = sp; x.summaryIssue = si; }
-      }));
-    }
+    const sp = $('#sumProg') ? keep($('#sumProg')) : '', si = $('#sumIssue') ? keep($('#sumIssue')) : '';
+    const curSp = String((mfg ? p.mfgSumProg : p.summaryProgress) || '').trim(), curSi = String((mfg ? p.mfgSumIssue : p.summaryIssue) || '').trim();
+    if ($('#sumProg') && (sp !== curSp || si !== curSi)) jobs.push(() => saveSum(pid, sp, si, null, mfg));
     $$('#mBody .st[data-step]').forEach(el => {
       const no = Number(el.dataset.step); const s = ((mfg ? p.mfg : p.steps) || []).find(x => Number(x.stepNo) === no); if (!s) return;
       const v = n => fieldVal(el.querySelector(`[name=${n}]`));
@@ -1687,7 +1708,7 @@
         x.updatedAt = nowStr();
       }));
     });
-    const mi = mfg ? [] : measChanges(p); if (mi.length) jobs.push(() => saveMeas(pid, mi, null));
+    const mi = measChanges(p, 0, mfg); if (mi.length) jobs.push(() => saveMeas(pid, mi, null, mfg));
     if (!jobs.length) { toast('변경 사항이 없습니다'); return; }
     jobs.forEach(j => j());
     toast(`저장되었습니다 (${jobs.length}건)`);
@@ -1761,19 +1782,13 @@
     }
     const id = t.closest('button') && t.closest('button').id;
     const pid = state.openProjectId;
-    if (id === 'saveMeas') { const mi = measChanges(findProject(pid)); if (!mi.length) toast('변경된 측정값이 없습니다'); else saveMeas(pid, mi, '측정값이 저장되었습니다'); return; }
-    if (id === 'autoSum') {
-      mutate({ action: 'saveSummary', projectId: pid, summaryProgress: '', summaryIssue: '' }, '자동 초안으로 바꿨습니다', d => {
-        const p = byId(d, pid); if (p) { p.summaryProgress = ''; p.summaryIssue = ''; }
-      });
-    }
+    const winMfg = state.openTrack === 'mfg';
+    if (id === 'saveMeas') { const mi = measChanges(findProject(pid), 0, winMfg); if (!mi.length) toast('변경된 측정값이 없습니다'); else saveMeas(pid, mi, '측정값이 저장되었습니다', winMfg); return; }
+    if (id === 'autoSum') saveSum(pid, '', '', '자동 초안으로 바꿨습니다', winMfg);
     if (id === 'saveSum') {
       // unchanged auto draft -> keep it automatic (store empty)
       const keep = (el) => { const v = fieldVal(el).trim(); return v === String(el.dataset.auto || '').trim() ? '' : v; };
-      const sp = keep($('#sumProg')), si = keep($('#sumIssue'));
-      mutate({ action: 'saveSummary', projectId: pid, summaryProgress: sp, summaryIssue: si }, '요약이 저장되었습니다', d => {
-        const p = byId(d, pid); if (p) { p.summaryProgress = sp; p.summaryIssue = si; }
-      });
+      saveSum(pid, keep($('#sumProg')), keep($('#sumIssue')), '요약이 저장되었습니다', winMfg);
     }
     if (id === 'shipBtn' && confirm('출하 완료 처리할까요?\n배치 칸은 비워지고, 기록은 프로젝트 관리 탭의 [출하완료]에 보관됩니다.')) {
       mutate({ action: 'release', projectId: pid, state: 'shipped' }, '출하 완료 처리되었습니다', d => {
@@ -1984,6 +1999,8 @@
           ['status', 'startDate', 'endDate', 'owner', 'progress', 'issue'].forEach(k => (s[k] = b[k])); if (b.checks !== undefined) s.checks = b.checks; s.updatedAt = now(); s.updatedBy = b.user;
           log(b, '공정 저장', p, s);
         }
+        if (b.action === 'saveMeasure' && p && b.track === 'mfg') { p.mfgMeas = p.mfgMeas || {}; (b.items || []).forEach(it => { p.mfgMeas[Number(it.stepNo)] = { x1: it.x1, x2: it.x2 }; }); log(b, '측정값 저장', p); return wait(snap()); }
+        if (b.action === 'saveSummary' && p && b.track === 'mfg') { p.mfgSumProg = b.summaryProgress; p.mfgSumIssue = b.summaryIssue; log(b, '요약 저장', p); return wait(snap()); }
         if (b.action === 'saveMeasure' && p) { (b.items || []).forEach(it => { const s = p.steps.find(x => x.stepNo === Number(it.stepNo)); if (s) { s.x1 = it.x1; s.x2 = it.x2; } }); log(b, 'measure', p, null, JSON.stringify(b.items)); }
         if (b.action === 'saveSummary' && p) { p.summaryProgress = b.summaryProgress; p.summaryIssue = b.summaryIssue; log(b, '요약 저장', p); }
         if (b.action === 'release' && p) { p.state = b.state; p.slot = null; log(b, b.state === 'shipped' ? '출하 완료' : '삭제', p); }
@@ -1995,19 +2012,23 @@
   })();
 
   // FAT 탭 '측정값 업로드': P-P Diameter -> 반복정밀도(5번)/AWC(6번) 공정의 X1/X2 (other hand's value kept)
+  // u.track 'mfg' = 제조 측정값 (제조 비밀번호), otherwise 품질 측정값 (품질 비밀번호)
   if (window.FatTab) window.FatTab.upload = async (u) => {
+    const mfg = u.track === 'mfg';
     const p = activeProjects().find(x => x.projectName === u.proj);
     if (!p) { toast(`'${u.proj}'은(는) 등록된 진행중 프로젝트가 아니라 측정값을 업로드할 수 없습니다 (그래프·엑셀 내보내기는 가능)`, true); return; }
     const def = measDefs().find(d => (u.test === 'awc' ? /AWC/i : /반복정밀도/).test(d.name));
     if (!def) { toast('측정 공정을 찾을 수 없습니다', true); return; }
-    const s = (p.steps || []).find(x => Number(x.stepNo) === def.no) || {};
+    const s = measSrc(p, def.no, mfg);
     const k = u.hand === 'X2' ? 'x2' : 'x1';
     const old = String(s[k] || '').trim();
-    const ok = await confirmBox('측정값 업로드', `${p.projectName}\n${def.no}. ${def.name} · ${u.hand} = ${u.value}${old ? `\n(기존 값 ${old} → 덮어쓰기)` : ''}`);
+    const what = mfg ? `[제조] ${String(def.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1')}` : `[품질] ${def.no}. ${def.name}`;
+    const ok = await confirmBox('측정값 업로드', `${p.projectName}\n${what} · ${u.hand} = ${u.value}${old ? `\n(기존 값 ${old} → 덮어쓰기)` : ''}`);
     if (!ok) return;
-    if (needKey() && !(await askKey())) return;
+    const sc = mfg ? 'mfg' : '';
+    if (needKey(sc) && !(await askKey(sc))) return;
     const item = { stepNo: def.no, x1: k === 'x1' ? u.value : String(s.x1 || ''), x2: k === 'x2' ? u.value : String(s.x2 || '') };
-    saveMeas(p.id, [item], `측정값 업로드 완료 · ${p.projectName} ${def.no}번 ${u.hand} ${u.value}`);
+    saveMeas(p.id, [item], `측정값 업로드 완료 · ${mfg ? '제조' : '품질'} · ${p.projectName} ${u.hand} ${u.value}`, mfg);
   };
 
   // ===================== 기타 탭 (협의사항 · 회의록 · 참고자료 · 기타) =====================

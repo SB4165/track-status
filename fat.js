@@ -90,10 +90,14 @@
   const TESTS = [['rep', '반복정밀도', '반복정밀도'], ['awc', 'AWC', 'AWC']]; // [key, label, file token]
   const today = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
   const TIK = 'track.fat.info';
-  const TI = { proj: '', manual: false, hand: '', test: '', no: '', date: today() }; // manual: 프로젝트명 직접 입력
-  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test', 'manual'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
-  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, manual: TI.manual, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
-  let PROJECTS = null; // null = not loaded yet; [{ name, label }]
+  // track: 'qa' 품질 | 'mfg' 제조 — which measurement set '측정값 업로드' writes (and which project list is shown)
+  const TRACKS = [['qa', '품질'], ['mfg', '제조']];
+  const TI = { track: 'qa', proj: '', manual: false, hand: '', test: '', no: '', date: today() }; // manual: 프로젝트명 직접 입력
+  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['track', 'proj', 'hand', 'test', 'manual'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
+  if (TI.track !== 'mfg') TI.track = 'qa';
+  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ track: TI.track, proj: TI.proj, manual: TI.manual, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
+  let PROJECTS = null; // null = not loaded yet; { qa: [{ name, label }], mfg: [...] }
+  const projList = () => (PROJECTS ? (Array.isArray(PROJECTS) ? PROJECTS : PROJECTS[TI.track] || []) : []);
   const S = { clickCheck: true, meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
   try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; S.clickCheck = c.clickCheck !== false; } catch (_) { /* storage blocked */ }
   const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis, clickCheck: !!S.clickCheck }))); } catch (_) { /* ignore */ } };
@@ -107,6 +111,7 @@
         <section class="fat-card fat-in">
           <div class="fat-h"><h3>테스트 정보</h3><span class="fat-hint">내보내기 파일명에 사용</span></div>
           <div class="fat-info" id="fatInfo">
+            <label><span>구분</span><span class="seg" data-fi="track" title="측정값 업로드 대상: 품질 측정값 / 제조 측정값">${TRACKS.map(([v, l]) => `<button type="button" data-v="${v}" class="${TI.track === v ? 'on' : ''}">${l}</button>`).join('')}</span></label>
             <label class="fi-w"><span>프로젝트</span><span class="fi-proj"><select class="in" id="fiProj"></select><input class="in" id="fiProjIn" placeholder="프로젝트명 직접 입력 (예: MISC-MPR6 #1)" maxlength="60" autocomplete="off" hidden></span></label>
             <label><span>핸드</span><span class="seg" data-fi="hand">${HANDS.map(h => `<button type="button" data-v="${h}" class="${TI.hand === h ? 'on' : ''}">${h}</button>`).join('')}</span></label>
             <label><span>테스트</span><span class="seg" data-fi="test">${TESTS.map(([v, l]) => `<button type="button" data-v="${v}" class="${TI.test === v ? 'on' : ''}">${l}</button>`).join('')}</span></label>
@@ -339,13 +344,14 @@
   }
   function renderInfo() {
     const sel = $('#fiProj'); if (!sel) return;
-    const list = PROJECTS || [];
+    const list = projList();
     if (!TI.manual && PROJECTS && TI.proj && !list.some(x => x.name === TI.proj)) { TI.proj = ''; saveInfo(); }
-    sel.innerHTML = `<option value="">${!PROJECTS ? '프로젝트 불러오는 중…' : list.length ? `프로젝트 선택 (${list.length})` : '선택 가능한 프로젝트 없음 (배치 + 3~6번 공정)'}</option>`
+    sel.innerHTML = `<option value="">${!PROJECTS ? '프로젝트 불러오는 중…' : list.length ? `프로젝트 선택 (${list.length})` : (TI.track === 'mfg' ? '선택 가능한 프로젝트 없음 (배치 + 제조 진행중)' : '선택 가능한 프로젝트 없음 (배치 + 3~6번 공정)')}</option>`
       + list.map(x => `<option value="${esc(x.name)}" ${!TI.manual && x.name === TI.proj ? 'selected' : ''}>${esc(x.label)}</option>`).join('')
       + `<option value="__manual" ${TI.manual ? 'selected' : ''}>✎ 직접 입력…</option>`;
     const pin = $('#fiProjIn'); pin.hidden = !TI.manual; if (TI.manual && document.activeElement !== pin) pin.value = TI.proj;
-    sel.title = '배치된 프로젝트 중 현재 공정이 3~6번(FAT 셋업 ~ FAT 측정(AWC))인 프로젝트';
+    sel.title = TI.track === 'mfg' ? '배치된(장비 칸·배치예정존) 프로젝트 중 제조 공정이 남아 있는 프로젝트' : '배치된 프로젝트 중 현재 공정이 3~6번(FAT 셋업 ~ FAT 측정(AWC))인 프로젝트';
+    const up = $('#fatUpload'); if (up) { up.textContent = `측정값 업로드 (${TI.track === 'mfg' ? '제조' : '품질'})`; up.title = TI.track === 'mfg' ? 'P-P Diameter를 선택한 프로젝트의 제조 FAT 측정값(반복정밀도/AWC) X1/X2로 저장 — 제조 비밀번호' : 'P-P Diameter를 선택한 프로젝트의 측정 공정(반복정밀도=5번, AWC=6번) X1/X2 값으로 저장 — 품질 비밀번호'; }
     const m = infoMissing();
     $('#fiName').innerHTML = m.length ? `<span class="fi-wait">미입력: ${m.map(x => x[1]).join(', ')}</span>` : `<span>파일명</span><b>${esc(baseName())}</b>`;
   }
@@ -481,7 +487,7 @@
       const m = infoMissing().filter(x => ['fiProj', 'hand', 'test'].includes(x[0]));
       if (m.length) { canExport(); return; }
       if (!root.FatTab.upload) { toast('업로드를 사용할 수 없습니다', true); return; }
-      root.FatTab.upload({ proj: TI.proj, hand: TI.hand, test: TI.test, testLabel: (TESTS.find(t => t[0] === TI.test) || [])[1] || TI.test, value: f6(S.res.pp), no: String(TI.no).trim(), date: TI.date });
+      root.FatTab.upload({ track: TI.track, proj: TI.proj, hand: TI.hand, test: TI.test, testLabel: (TESTS.find(t => t[0] === TI.test) || [])[1] || TI.test, value: f6(S.res.pp), no: String(TI.no).trim(), date: TI.date });
     });
     cv.addEventListener('mousemove', e => { const p = nearest(e); cv.style.cursor = p ? 'pointer' : 'default'; cv.title = p ? `Index ${p.idx} (${f2(p.x)}, ${f2(p.y)})${p.out ? ' · OUT' : ''}` : ''; });
     $('#fatPick').addEventListener('click', e => { if (e.target.closest('.fp-x')) focusPoint(null); });
