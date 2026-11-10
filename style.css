@@ -1054,3 +1054,9 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .pl.mini .card.empty .card-top { position: static; margin: 0; }
 .pl.mini .card.empty .add { font-size: .8em; margin: 0; }
 .card.plan.all { border-color: color-mix(in srgb, #0e8a7e 35%, var(--line)); }
+@container plan (max-width: 820px) {
+  .plan .pl.mini .card .trk { display: none; }
+  .plan .pl.mini .card-top { flex-direction: row; gap: .3em; }
+  .plan .pl.mini .card .no { width: 1.7em; height: 1.7em; font-size: .9em; flex: none; }
+  .plan .pl.mini .pname { -webkit-line-clamp: 1; text-align: left; }
+}
