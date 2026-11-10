@@ -105,7 +105,8 @@
   const vp = (p) => (state.dash === 'mfg' ? vpM(p) : p);
   const ALL = () => state.dash === 'all';
   // projects shown on the current dashboard (제조: equipment slots only — pack slots exist only in 품질)
-  const boardMap = () => { const m = bySlot(); Object.keys(m).forEach(k => { if (state.dash === 'mfg' ? isPack(k) : isPlan(k)) delete m[k]; }); return m; };
+  // 제조: equipment + 배치예정존 / 품질: equipment + 패킹 / 통합: all three (배치예정 + 패킹 shown as 16 compact cells)
+  const boardMap = () => { const m = bySlot(); Object.keys(m).forEach(k => { if (state.dash === 'mfg' ? isPack(k) : state.dash === 'qa' ? isPlan(k) : false) delete m[k]; }); return m; };
   const notStarted = (c) => !c || (Number(c.stepNo) === 1 && c.status === '대기');
   // 통합: one track per project — 제조 until 품질 has begun (품질 follows 제조); 제조 finished or pack slot -> 품질
   const liveTrack = (p) => { const qStarted = (p.steps || []).some(s => s.status !== '대기'); const mOpen = (p.mfg || []).some(s => s.status !== '완료' && s.status !== '생략');
@@ -456,7 +457,7 @@
     const pack = isPack(slot), plan = isPlan(slot);
     const tag = `<span class="no ${pack ? 'pk' : plan ? 'pl-no' : ''}">${esc(slotTag(slot))}</span>`;
     if (!p) {
-      if (ALL()) return `<div class="card empty ro ${pack ? 'pack' : ''}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack ? esc(slotName(slot)) : '비어 있음'}</span></div>`;
+      if (ALL()) return `<div class="card empty ro ${pack ? 'pack' : ''} ${plan ? 'plan' : ''}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack || plan ? esc(slotName(slot)) : '비어 있음'}</span></div>`;
       return `<button class="card empty ${pack ? 'pack' : ''} ${plan ? 'plan' : ''}" data-slot="${slot}">${typesHTML(slot)}<div class="card-top">${tag}</div><span class="add">${pack ? `${esc(slotName(slot))}<br><small>${PACK_MIN_STEP}번 공정 이상 배치</small>` : plan ? `${esc(slotName(slot))}<br><small>+ 프로젝트 배치</small>` : '+ 프로젝트 배치'}</span></button>`;
     }
     const i = projectInfo(p);
@@ -483,7 +484,7 @@
   // 통합 card: 제조 + 품질 progress, combined issues (read-only)
   function allCardHTML(slot, p) {
     if (!p) return cardHTML(slot, null);
-    const pack = isPack(slot);
+    const pack = isPack(slot), plan = isPlan(slot);
     const m = projectInfo(vpM(p)), q = projectInfo(p);
     const trk = (lbl, i, cls) => `<div class="trk ${cls}"><div class="th"><span class="tl">${lbl}</span><span class="tp">${i.done}/${i.total} · ${i.pct}%</span></div>
       <div class="tc">${i.cur ? i.curGroup.slice(0, 2).map(s => `<span class="tn"><b>${s.stepNo}. ${esc(s.stepName)}</b>${pill(s.status)}</span>`).join('') : `<span class="tn"><b>전 공정 완료</b>${pill('완료')}</span>`}</div>
@@ -492,14 +493,16 @@
     const tip = [!pack && m.issueTip ? '[제조] ' + stripMd(m.issueTip) : '', q.issueTip ? '[품질] ' + stripMd(q.issueTip) : ''].filter(Boolean).join('\n');
     const lv = liveTrack(p) === 'mfg' ? m : q; // 진행 = the live track's progress
     const st = !pack && m.cur && !notStarted(m.cur) && (m.fixing.length || !q.cur || notStarted(q.cur)) ? m.curStatus : q.curStatus;
-    return `<button class="card all ${pack ? 'pack' : ''} ${(!pack && m.hasIssue) || q.hasIssue ? 'has-issue' : ''}" data-pid="${esc(p.id)}" data-st="${esc(st)}" title="${esc(p.projectName)}">
+    return `<button class="card all ${pack ? 'pack' : ''} ${plan ? 'plan' : ''} ${(!pack && m.hasIssue) || q.hasIssue ? 'has-issue' : ''}" data-pid="${esc(p.id)}" data-st="${esc(st)}" title="${esc(p.projectName)}">
       ${typesHTML(slot)}
-      <div class="card-top"><span class="no ${pack ? 'pk' : ''}">${esc(slotTag(slot))}</span><span class="pname">${esc(p.projectName)}</span></div>
+      <div class="card-top"><span class="no ${pack ? 'pk' : plan ? 'pl-no' : ''}">${esc(slotTag(slot))}</span><span class="pname">${esc(p.projectName)}</span></div>
       ${liveTrack(p) === 'mfg' ? trk('제조', m, 'mf') : trk('품질', q, 'qa')}
       <div class="sum"><div class="row" title="${esc(stripMd(lv.progTip))}"><span class="t">진행</span><span class="v">${lv.prog ? mdView(lineBreaks(lv.prog)) : '<span class="muted">없음</span>'}</span></div><div class="row ${iss ? 'issue' : ''}" title="${esc(tip)}"><span class="t">이슈</span><span class="v">${iss ? mdView(lineBreaks(iss)) : '<span class="muted">없음</span>'}</span></div></div>
     </button>`;
   }
   const DASH = [['all', '통합'], ['mfg', '제조'], ['qa', '품질']];
+  // 통합 compact cells: packing area y 235..623 split into 4 rows (2 x 배치예정, 2 x 패킹); rows of the source grid start at y 235 / 433
+  const MINI = { top: 235, h: 92.5, gap: 6, split: 300 };
   function renderBoard() {
     const d = state.data;
     const map = boardMap();
@@ -511,7 +514,7 @@
       + `<span class="hint">${mode === 'all' ? '통합 보기 (조회 전용) — 수정은 제조·품질 탭에서' : mode === 'mfg' ? '제조 공정 · 배치는 품질과 공유됩니다' : '장비 칸을 누르면 전체 공정을 볼 수 있습니다'}</span>`;
     $('#legend').insertAdjacentHTML('beforeend', `<button type="button" class="btn cap-btn" id="capBtn" title="공정 목록 + 배치도를 이미지로 클립보드에 복사"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>화면 복사</button>`);
     const avgOf = (f) => placed.length ? Math.round(placed.reduce((a, p) => a + f(p).pct, 0) / placed.length) : 0;
-    const onBoard = (l) => (mode === 'mfg' ? l.type !== 'pack' : l.type !== 'plan');
+    const onBoard = (l) => (mode === 'mfg' ? l.type !== 'pack' : mode === 'qa' ? l.type !== 'plan' : true);
     const nSlots = slotItems().filter(onBoard).length;
     const unplaced = activeProjects().filter(p => !p.slot).length;
     let cards;
@@ -562,6 +565,11 @@
       if (it.type === 'fixture') return `<div class="pl fixture ${it.h > it.w * 2 ? 'tall' : ''}" style="${st}" title="${esc(it.label)}">${esc(it.label)}</div>`;
       if (it.type === 'label') return `<div class="pl label ${it.h >= 28 ? 'big' : ''}" style="${st}">${esc(it.label)}</div>`;
       if (it.type === 'door') return `<div class="pl door" style="${st}" title="${esc(it.label || '출입문')}"><svg viewBox="0 0 40 24" aria-hidden="true"><path d="M3 22h34"/><path d="M6 22V6"/><path d="M6 6a16 16 0 0 1 16 16"/></svg><span>${esc(it.label || '출입문')}</span></div>`;
+      // 통합: the packing area holds 16 compact cells — 배치예정 1~8 on top, 패킹 1~8 below (same x/w, quarter-height rows)
+      if (mode === 'all' && (it.type === 'pack' || it.type === 'plan')) {
+        const row = (it.type === 'plan' ? 0 : 2) + (Number(it.y) < MINI.split ? 0 : 1);
+        return `<div class="pl mini" style="--x:${it.x};--y:${MINI.top + row * (MINI.h + MINI.gap)};--w:${it.w};--h:${MINI.h}">${card(it.slot)}</div>`;
+      }
       if (it.type === 'pack') return mode === 'mfg' ? '' : `<div class="pl" ${mode === 'qa' ? `data-pack="${it.slot}"` : ''} style="${st}">${card(it.slot)}</div>`;
       if (it.type === 'plan') return mode === 'mfg' ? `<div class="pl" data-drop="${it.slot}" style="${st}">${card(it.slot)}</div>` : '';
       if (it.type === 'slot') return `<div class="pl" ${mode === 'mfg' ? `data-drop="${it.slot}"` : ''} style="${st}">${card(it.slot)}</div>`;

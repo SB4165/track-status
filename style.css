@@ -1043,3 +1043,14 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .mfg-left .f-lbl { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); }
 .mfg-left .mfg-pg { min-height: 28px; gap: 8px; }
 .mfg-left .mfg-pg b { font-size: 12px; }
+/* 통합: 배치예정 + 패킹 as 16 compact cells */
+.pl.mini .card { padding: .4em .55em; gap: .2em; }
+.pl.mini .card .sum { display: none; }
+.pl.mini .card .card-top { margin-bottom: 0; }
+.pl.mini .card .card-top .pname { font-size: .9em; }
+.pl.mini .card.all .trk .tc .tn:nth-child(n+2) { display: none; }
+.pl.mini .card.all .trk { gap: .1em; }
+.pl.mini .card.empty { justify-content: center; align-items: center; }
+.pl.mini .card.empty .card-top { position: static; margin: 0; }
+.pl.mini .card.empty .add { font-size: .8em; margin: 0; }
+.card.plan.all { border-color: color-mix(in srgb, #0e8a7e 35%, var(--line)); }
