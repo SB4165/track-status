@@ -617,6 +617,19 @@
     </button>`;
   }
 
+  // 통합: read-only full view of the 품질 note
+  function viewNote(id) {
+    state.openProjectId = null;
+    const it = state.data.layout.find(l => l.id === String(id).replace(/^mfg:/, '')) || {};
+    const n = (state.data.notes || {})[id] || {};
+    $('#mSlot').textContent = '통합 (조회 전용)' + (n.updatedAt ? ` · 최종 수정 ${n.updatedAt}${n.updatedBy ? ' · ' + n.updatedBy : ''}` : '');
+    $('#mTitle').textContent = it.label || '기타사항';
+    const has = String(n.content || '').trim();
+    $('#mBody').innerHTML = `<div class="note-view" style="${noteStyle(n.style).css}">${has ? noteBody(n.content) : '<span class="muted">입력된 내용이 없습니다</span>'}</div>
+      <div class="row-end"><button class="btn" data-goto-note="qa">품질에서 수정</button></div>`;
+    openModal(true);
+    $('[data-goto-note]').addEventListener('click', () => { closeModal(); const b = document.querySelector('#dashTabs [data-dash="qa"]'); if (b) b.click(); });
+  }
   function openNote(id) {
     state.openProjectId = null;
     const it = state.data.layout.find(l => l.id === String(id).replace(/^mfg:/, '')) || {};
@@ -1049,9 +1062,13 @@
     const m = projectInfo(vpM(p)), q = projectInfo(p);
     $('#mSlot').textContent = `통합 (조회 전용) · ${p.slot ? slotName(p.slot) + ' 배치' : '미배치'}`;
     $('#mTitle').textContent = p.projectName;
-    const col = (lbl, track, steps, i) => `<div class="ro-col"><div class="mh"><b>${lbl}</b><span class="ro-pg"><span class="bar"><i style="width:${i.pct}%"></i></span>${i.done}/${i.total} · ${i.pct}%</span><button class="btn" data-goto="${track}">${lbl}에서 수정</button></div>
-      <ol class="ro-steps">${(steps || []).map(s => { const cur = i.curGroup.some(x => Number(x.stepNo) === Number(s.stepNo)); const iss = String(s.issue || '').trim() && s.status !== '완료' ? s.issue : ''; const pr = String(s.progress || '').trim();
-        return `<li class="${cur ? 'cur' : ''}"><span class="st-n">${s.stepNo}</span><span class="nm">${esc(s.stepName)}${iss ? `<small class="issue">이슈: ${mdView(iss)}</small>` : pr ? `<small>${mdView(pr)}</small>` : ''}</span>${pill(s.status)}</li>`; }).join('')}</ol></div>`;
+    // 이슈 요약 = card issue (manual summary, else every open-step issue) in full; step issues shown for all steps (완료 included, dimmed)
+    const fin = s => s.status === '완료' || s.status === '생략';
+    const col = (lbl, track, steps, i) => { const full = i.manualIssue || (steps || []).filter(s => !fin(s) && (String(s.issue || '').trim() || s.status === '조치중' || s.status === '보류')).map(s => String(s.issue || '').trim() || `${s.stepName}(${s.status})`).join('\n');
+      return `<div class="ro-col"><div class="mh"><b>${lbl}</b><span class="ro-pg"><span class="bar"><i style="width:${i.pct}%"></i></span>${i.done}/${i.total} · ${i.pct}%</span><button class="btn" data-goto="${track}">${lbl}에서 수정</button></div>
+      ${String(full).trim() ? `<div class="ro-iss"><span class="t">이슈 요약${i.manualIssue ? '' : ' <em>(미완료 공정 이슈)</em>'}</span><div class="v">${md2html(lineBreaks(full))}</div></div>` : ''}
+      <ol class="ro-steps">${(steps || []).map(s => { const cur = i.curGroup.some(x => Number(x.stepNo) === Number(s.stepNo)); const iss = String(s.issue || '').trim(); const pr = String(s.progress || '').trim(); const dn = fin(s);
+        return `<li class="${cur ? 'cur' : ''}"><span class="st-n">${s.stepNo}</span><span class="nm">${esc(s.stepName)}${iss ? `<small class="issue${dn ? ' done' : ''}">이슈: ${md2html(iss)}</small>` : ''}${pr && (!iss || !dn) ? `<small>${md2html(pr)}</small>` : ''}</span>${pill(s.status)}</li>`; }).join('')}</ol></div>`; };
     body.innerHTML = `<div class="ro-grid">${(p.mfg || []).length ? col('제조', 'mfg', p.mfg, m) : ''}${col('품질', 'qa', p.steps, q)}</div>${ncrBoxHTML(p)}`;
     if (!keepScroll) openModal(false);
     $('#mSave').hidden = true;
@@ -1595,7 +1612,7 @@
 
   const onCardClick = e => {
     const c = e.target.closest('.card'); if (!c) return;
-    if (c.dataset.note) { if (!ALL()) openNote(c.dataset.note); return; }
+    if (c.dataset.note) { if (ALL()) viewNote(c.dataset.note); else openNote(c.dataset.note); return; }
     if (c.dataset.pid) { state.openStep = null; openProj(findProject(c.dataset.pid)); }
     else if (c.dataset.slot && !ALL()) openSlotPicker(Number(c.dataset.slot));
   };
