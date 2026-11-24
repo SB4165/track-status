@@ -43,6 +43,7 @@
 
   function build() {
     const v = $('#viewRes'); if (!v || v.dataset.built) return; v.dataset.built = '1';
+    const bind = !v.dataset.bound; v.dataset.bound = '1'; // listeners on #viewRes survive re-render: attach once
     v.innerHTML = `
       <div class="rs-grid">
         <section class="fat-card rs-in">
@@ -67,6 +68,7 @@
           </div>
         </section>
       </div>`;
+    if (bind) {
     v.addEventListener('input', e => {
       const t = e.target;
       if (t.id === 'rsBase') S.base = t.value; else if (t.id === 'rsRes') S.res = t.value; else if (t.dataset.row != null) S.rows[Number(t.dataset.row)] = t.value; else return;
@@ -85,10 +87,26 @@
     });
     v.addEventListener('keydown', e => { const t = e.target; if (e.key !== 'Enter' || (t.dataset.row == null && t.id !== 'rsBase')) return; e.preventDefault(); const n = t.id === 'rsBase' ? $('#viewRes [data-row="0"]') : $(`#viewRes [data-row="${Number(t.dataset.row) + 1}"]`); if (n) n.focus(); });
     v.addEventListener('click', e => {
-      if (e.target.id === 'rsReset') { if (!confirm('입력한 기준 좌표와 1~10번 좌표를 모두 지울까요? (Resolution 값은 유지)')) return; S.base = ''; S.rows = Array(ROWS).fill(''); save(); v.dataset.built = ''; v.innerHTML = ''; build(); return; }
+      if (e.target.id === 'rsReset') { reset(); return; }
       const cp = e.target.closest('[data-copy]'); if (cp) { const val = cp.dataset.copy; (navigator.clipboard ? navigator.clipboard.writeText(val) : Promise.reject()).then(() => toast(`복사했습니다: ${val}`)).catch(() => toast('복사하지 못했습니다', true)); }
     });
+    }
     paint();
+  }
+  // 초기화: 좌표만 비우고, 새 Resolution이 계산돼 있으면(부적합) Resolution 칸을 새 값으로 교체
+  function reset() {
+    const r = calc(S.base, S.res, S.rows);
+    const nv = !r.ok && r.next != null ? fx(r.next, 9) : null;
+    const msg = nv ? `기준 좌표와 1~10번 좌표를 모두 지우고 Resolution을 새 값으로 바꿀까요?\n${S.res} → ${nv}`
+      : '입력한 기준 좌표와 1~10번 좌표를 모두 지울까요? (Resolution 값은 유지)';
+    if (!confirm(msg)) return;
+    const prev = S.res;
+    S.base = ''; S.rows = Array(ROWS).fill(''); if (nv) S.res = nv;
+    save();
+    $('#rsBase').value = ''; $('#rsRes').value = S.res;
+    document.querySelectorAll('#viewRes [data-row]').forEach(el => { el.value = ''; });
+    paint();
+    toast(nv ? `Resolution을 변경했습니다: ${prev} → ${nv}` : '좌표를 초기화했습니다');
   }
   function paint() {
     const r = calc(S.base, S.res, S.rows);
