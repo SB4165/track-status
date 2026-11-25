@@ -6,7 +6,7 @@
   <title>트랙(Track)</title>
   <meta name="theme-color" content="#f4f5f7">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=69">
+  <link rel="stylesheet" href="style.css?v=70">
   <style>
     /* process list: never taller than the visible window, so no step is cut off in short windows or inside the portal iframe */
     .proc-side { max-height: max(240px, calc(100vh - 126px)) !important; scrollbar-width: thin; }
@@ -26,6 +26,10 @@
         <button class="tab" role="tab" data-tab="etc">기타</button>
       </nav>
       <div class="actions">
+        <button class="btn ghost" id="adminBtn" title="관리자 메뉴 (비밀번호 변경)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2V16"/></svg>
+          <span class="hide-sm">관리자</span>
+        </button>
         <button class="btn ghost" id="userBtn" title="사용자 선택·추가">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
           <span id="userName" class="hide-sm">이름 설정</span>
@@ -175,6 +179,6 @@
   <script src="config.js?v=59"></script>
   <script src="fat.js?v=66"></script>
   <script src="res.js?v=61"></script>
-  <script src="app.js?v=68"></script>
+  <script src="app.js?v=69"></script>
 </body>
 </html>

@@ -1885,6 +1885,98 @@
   });
   $('#mBody').addEventListener('keydown', e => { if (e.target.id === 'uNew' && e.key === 'Enter') { e.preventDefault(); $('#uAdd').click(); } });
 
+  // ===================== 관리자 메뉴 =====================
+  // ADMIN_KEY (Script Property, set once by the user) → change 품질(WRITE_KEY, 개발 사이트 공통) / 제조(WRITE_KEY_MFG) / 관리자 passwords.
+  // Admin password is kept in sessionStorage only (until the tab closes); values are never stored in the repo or logs.
+  const ADM_KEY = 'track.admin';
+  const ADM_T = [
+    ['qa', '품질·통합·프로젝트 관리', '개발 사이트 공통'],
+    ['mfg', '제조 대시보드', ''],
+    ['admin', '관리자', ''],
+  ];
+  const admDemo = { key: '0000', status: { qa: true, mfg: false, admin: true } };
+  async function adminPost(body) {
+    body.adminKey = SS.get(ADM_KEY) || ''; body.user = LS.get('track.user') || '';
+    if (DEV) body.ws = 'dev';
+    if (DEMO) {
+      await new Promise(r => setTimeout(r, 150));
+      if (body.adminKey !== admDemo.key) throw new Error('관리자 비밀번호가 올바르지 않습니다. (데모: 0000)');
+      if (body.action === 'adminSetKey') {
+        const v = String(body.newKey || '').trim(); if (v.length < 4 || v.length > 64) throw new Error('새 비밀번호는 4~64자로 입력하세요.');
+        admDemo.status[body.target] = true; if (body.target === 'admin') admDemo.key = v;
+      }
+      return { ok: true, status: Object.assign({}, admDemo.status) };
+    }
+    const j = await (await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), redirect: 'follow' })).json();
+    if (!j.ok) { if (/관리자 비밀번호/.test(j.error || '')) SS.del(ADM_KEY); throw new Error(j.error || '서버 오류'); }
+    return j;
+  }
+  $('#adminBtn').addEventListener('click', openAdmin);
+  function openAdmin() {
+    state.openProjectId = null;
+    $('#mTitle').textContent = '관리자 메뉴';
+    const notSet = state.data && !DEMO && state.data.adminSet === false;
+    if (!SS.get(ADM_KEY)) {
+      $('#mSlot').textContent = '관리자 인증';
+      $('#mBody').innerHTML = notSet
+        ? `<div class="hint" style="font-size:13.5px;line-height:1.6">관리자 비밀번호가 아직 설정되지 않았습니다.<br>Apps Script › <b>프로젝트 설정</b> › <b>스크립트 속성</b>에서 속성 <b>ADMIN_KEY</b>를 추가하고 값을 입력한 뒤 저장하세요.<br>설정 후 새로고침하면 이 메뉴를 사용할 수 있습니다.</div>`
+        : `<label class="f">관리자 비밀번호<input type="password" class="in" id="admPw" autocomplete="current-password"></label>
+           <div class="hint adm-msg" id="admMsg">이 창(탭)을 닫기 전까지는 다시 묻지 않습니다.${DEMO ? ' (데모: 0000)' : ''}</div>
+           <div class="row-end"><button class="btn primary" id="admLogin">확인</button></div>`;
+      openModal(true);
+      const inp = $('#admPw'); if (!inp) return;
+      const go = async () => {
+        const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+        const b = $('#admLogin'); b.disabled = true; $('#admMsg').className = 'hint adm-msg'; $('#admMsg').textContent = '확인 중…';
+        SS.set(ADM_KEY, v);
+        try { const j = await adminPost({ action: 'adminCheck' }); renderAdmin(j.status); }
+        catch (e) { SS.del(ADM_KEY); $('#admMsg').className = 'hint adm-msg err'; $('#admMsg').textContent = e.message; b.disabled = false; inp.select(); }
+      };
+      $('#admLogin').addEventListener('click', go);
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+      setTimeout(() => inp.focus(), 50);
+      return;
+    }
+    $('#mSlot').textContent = '불러오는 중…'; $('#mBody').innerHTML = '<div class="hint">확인 중…</div>'; openModal(true);
+    adminPost({ action: 'adminCheck' }).then(j => renderAdmin(j.status)).catch(e => { toast(e.message, true); openAdmin(); });
+  }
+  function renderAdmin(st) {
+    st = st || {};
+    const stTxt = (t) => t === 'mfg' ? (st.mfg ? '설정됨' : '미설정 · 품질 비밀번호 사용') : (st[t] ? '설정됨' : '미설정');
+    $('#mSlot').textContent = '관리자 인증됨 · 이 창(탭)을 닫으면 해제';
+    $('#mBody').innerHTML = `
+      <div class="adm-sec"><h3>비밀번호 변경</h3>
+        <div class="adm-tg">${ADM_T.map(([k, n, sub], i) => `<label><input type="radio" name="admT" value="${k}" ${i === 0 ? 'checked' : ''}>${esc(n)}${sub ? ` <small class="hint">(${esc(sub)})</small>` : ''}<span class="st ${st[k] ? 'on' : ''}">${stTxt(k)}</span></label>`).join('')}</div>
+        <label class="f">새 비밀번호<input type="password" class="in" id="admN1" autocomplete="new-password" maxlength="64"></label>
+        <label class="f" style="margin-top:6px">새 비밀번호 확인<input type="password" class="in" id="admN2" autocomplete="new-password" maxlength="64"></label>
+        <div class="hint adm-msg" id="admMsg">4~64자. 변경 즉시 모든 PC에 적용되며, 다른 PC는 다음 저장 때 새 비밀번호를 다시 묻습니다.</div>
+        <div class="row-end"><button class="btn" id="admOut">관리자 로그아웃</button><button class="btn primary" id="admSet">변경</button></div>
+      </div>`;
+    const msg = (t, err) => { $('#admMsg').className = 'hint adm-msg' + (err ? ' err' : ''); $('#admMsg').textContent = t; };
+    $('#admOut').addEventListener('click', () => { SS.del(ADM_KEY); toast('관리자 로그아웃'); closeModal(); });
+    $('#admSet').addEventListener('click', async () => {
+      const t = ($('#mBody input[name="admT"]:checked') || {}).value;
+      const n = ADM_T.find(x => x[0] === t);
+      const a = $('#admN1').value.trim(), b = $('#admN2').value.trim();
+      if (a.length < 4 || a.length > 64) { msg('새 비밀번호는 4~64자로 입력하세요.', true); $('#admN1').focus(); return; }
+      if (a !== b) { msg('새 비밀번호와 확인 값이 다릅니다.', true); $('#admN2').select(); return; }
+      if (!(await confirmBox('비밀번호 변경', `${n[1]}${n[2] ? ' (' + n[2] + ')' : ''} 비밀번호를 변경할까요?\n변경 즉시 모든 PC에 적용됩니다.`))) return;
+      const btn = $('#admSet'); btn.disabled = true; msg('변경 중…');
+      try {
+        const j = await adminPost({ action: 'adminSetKey', target: t, newKey: a });
+        if (t === 'admin') SS.set(ADM_KEY, a);
+        if (t === 'qa') SS.del(keyName(''));
+        if (t === 'qa' || t === 'mfg') SS.del(keyName('mfg')); // 제조 falls back to 품질 when unset
+        if (state.data) { if (t === 'qa') state.data.keyRequired = true; if (t !== 'admin') state.data.keyRequiredMfg = true; if (t === 'admin') state.data.adminSet = true; }
+        toast(`${n[1]} 비밀번호가 변경되었습니다`);
+        renderAdmin(j.status);
+      } catch (e) {
+        msg(e.message, true); btn.disabled = false;
+        if (!SS.get(ADM_KEY)) setTimeout(openAdmin, 1200);
+      }
+    });
+  }
+
   async function load(manual) {
     if (state.pending) return;
     if (!manual && !$('#overlay').hidden) return; // don't disturb while editing

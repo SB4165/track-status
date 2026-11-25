@@ -253,7 +253,7 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .section-t { font-size: 13px; font-weight: 800; margin: 4px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .box { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 18px; }
 label.f { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
-input[type=text], input[type=date], input[type=search], textarea, select.in {
+input[type=text], input[type=password], input[type=date], input[type=search], textarea, select.in {
   width: 100%; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 9px 11px; font-size: 14px; outline: none;
 }
 .search input[type=search] { border: 0; padding: 0; }
@@ -916,6 +916,16 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
 .urow.on .upick { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .uadd { display: flex; gap: 6px; margin-top: 12px; }
 .uadd .in { flex: 1; }
+/* 관리자 메뉴 */
+.adm-sec { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--surface); }
+.adm-sec h3 { margin: 0 0 8px; font-size: 14px; }
+.adm-tg { display: grid; gap: 6px; margin-bottom: 10px; }
+.adm-tg label { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; }
+.adm-tg label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.adm-tg .st { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--text-3); white-space: nowrap; }
+.adm-tg .st.on { color: var(--prog, #16a34a); }
+.adm-msg { margin-top: 6px; min-height: 1.2em; }
+.adm-msg.err { color: var(--danger); }
 /* process list density (fit the whole list in the plan height) */
 .proc-side.d1 { padding-top: 8px; padding-bottom: 8px; }
 .proc-side.d1 ol { gap: 2px; }

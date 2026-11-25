@@ -165,7 +165,7 @@ const SHEETS = {
 const ACTION_LABEL = {
   create: '프로젝트 등록', setSlot: '배치 변경', saveStep: '공정 저장', saveSummary: '요약 저장',
   shipped: '출하 완료', removed: '삭제', restore: '복원', note: '기타사항 수정', edit: '프로젝트명 수정', skip: '시작 공정 지정',
-  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', board: '기타 게시판', saveMfgStep: '제조 공정 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제',
+  sync: '참조 동기화', unsync: '동기화 취소', exclude: '동기화 제외', include: '제외 해제', steps: '공정 목록 변경', layout: '배치도 변경', measure: '측정값 저장', board: '기타 게시판', saveMfgStep: '제조 공정 저장', ncrSync: '부적합 동기화', ncrDone: '부적합 처리완료', ncrUndone: '부적합 처리완료 해제', admin: '관리자 설정',
 };
 
 // ===== Setup / migration (safe to run repeatedly) =====
@@ -249,6 +249,7 @@ function doPost(e) {
   try {
     useWs_(body.ws);
     migrate_();
+    if (/^admin/.test(String(body.action || ''))) return json_(Object.assign({ ok: true }, admin_(body, lock)));
     checkKey_(body);
     if (body.action === 'checkKey') return json_({ ok: true });
     lock.waitLock(20000);
@@ -306,6 +307,44 @@ function checkKey_(b) {
   if (b.action === 'saveNote' && mfgNote !== mfg) throw new Error(mfgNote ? '제조 기타사항은 제조 대시보드 비밀번호로 저장해야 합니다.' : '품질 기타사항은 품질 비밀번호로 저장해야 합니다.');
   const k = mfg ? (props.getProperty('WRITE_KEY_MFG') || props.getProperty('WRITE_KEY')) : props.getProperty('WRITE_KEY');
   if (k && b.key !== k) throw new Error('비밀번호가 올바르지 않습니다.');
+}
+
+// ===== 관리자 메뉴 (ADMIN_KEY) =====
+// ADMIN_KEY is set once by the user in Script Properties; afterwards every password (incl. ADMIN_KEY) can be changed from the site.
+// Values are never logged or returned. 5 wrong admin passwords → locked for 10 minutes.
+const ADMIN_TARGETS = {
+  qa:    { prop: 'WRITE_KEY',     label: '품질·통합·프로젝트 관리(개발 사이트 공통)' },
+  mfg:   { prop: 'WRITE_KEY_MFG', label: '제조' },
+  admin: { prop: 'ADMIN_KEY',     label: '관리자' },
+};
+function adminStatus_() {
+  const props = PropertiesService.getScriptProperties();
+  return { qa: !!props.getProperty('WRITE_KEY'), mfg: !!props.getProperty('WRITE_KEY_MFG'), admin: !!props.getProperty('ADMIN_KEY') };
+}
+function adminAuth_(b) {
+  const k = PropertiesService.getScriptProperties().getProperty('ADMIN_KEY');
+  if (!k) throw new Error('관리자 비밀번호(ADMIN_KEY)가 아직 설정되지 않았습니다. Apps Script › 프로젝트 설정 › 스크립트 속성에서 먼저 추가하세요.');
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('ADMIN_FAIL') || 0);
+  if (fails >= 5) throw new Error('관리자 비밀번호를 5회 잘못 입력해 10분간 잠겼습니다. 잠시 후 다시 시도하세요.');
+  if (String(b.adminKey || '') !== k) {
+    cache.put('ADMIN_FAIL', String(fails + 1), 600);
+    throw new Error('관리자 비밀번호가 올바르지 않습니다. (' + (fails + 1) + '/5)');
+  }
+  cache.remove('ADMIN_FAIL');
+}
+function admin_(b, lock) {
+  adminAuth_(b);
+  if (b.action === 'adminCheck') return { status: adminStatus_() };
+  if (b.action !== 'adminSetKey') throw new Error('Unknown action');
+  const t = ADMIN_TARGETS[b.target];
+  if (!t) throw new Error('변경할 비밀번호 종류가 올바르지 않습니다.');
+  const v = String(b.newKey || '').trim();
+  if (v.length < 4 || v.length > 64) throw new Error('새 비밀번호는 4~64자로 입력하세요.');
+  lock.waitLock(20000);
+  PropertiesService.getScriptProperties().setProperty(t.prop, v);
+  history_(b.user, 'admin', null, null, t.label + ' 비밀번호 변경');
+  return { status: adminStatus_() };
 }
 
 // ===== Reference: project names =====
@@ -415,6 +454,7 @@ function bootstrap_() {
   readTable_('Notes').forEach(n => { notes[n.id] = { content: String(n.content || ''), updatedAt: n.updatedAt, updatedBy: n.updatedBy, style: String(n.style || '') }; });
   const keyRequired = !!PropertiesService.getScriptProperties().getProperty('WRITE_KEY');
   const keyRequiredMfg = !!(PropertiesService.getScriptProperties().getProperty('WRITE_KEY_MFG') || PropertiesService.getScriptProperties().getProperty('WRITE_KEY'));
+  const adminSet = !!PropertiesService.getScriptProperties().getProperty('ADMIN_KEY');
   const syncExcluded = getDb_().getSheetByName('SyncState') ? readTable_('SyncState').filter(r => r.state === 'excluded').map(r => String(r.name)) : [];
   const ncr = getDb_().getSheetByName('Ncr') ? readTable_('Ncr').filter(r => String(r.no) !== '').map(r => {
     const o = { no: String(r.no), done: r.done === true || String(r.done).toUpperCase() === 'TRUE' };
@@ -422,7 +462,7 @@ function bootstrap_() {
     return o;
   }) : [];
   const ncrSyncedAt = PropertiesService.getScriptProperties().getProperty(wsKey_('NCR_SYNCED_AT')) || '';
-  return { ws: WS, layout, projects, notes, users, keyRequired, keyRequiredMfg, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: WS === 'dev' ? [] : MFG_STEPS, statuses: STATUSES, serverTime: now_() };
+  return { ws: WS, layout, projects, notes, users, keyRequired, keyRequiredMfg, adminSet, syncExcluded, ncr, ncrSyncedAt, stepDefs: STEPS, mfgStepDefs: WS === 'dev' ? [] : MFG_STEPS, statuses: STATUSES, serverTime: now_() };
 }
 
 function getHistory_(p) {
