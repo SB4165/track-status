@@ -1077,3 +1077,19 @@ button.stat:hover .k .go { opacity: 1; color: var(--accent); }
   .plan .pl.mini .card .no { width: 1.7em; height: 1.7em; font-size: .9em; flex: none; }
   .plan .pl.mini .pname { -webkit-line-clamp: 1; text-align: left; }
 }
+
+/* FAT 측정값: 값 우측 '그래프 확인' + 그래프 보기 창 */
+.mxw { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mxw .mx { flex: 1; min-width: 0; }
+.gbtn { flex: none; padding: 4px 9px; font-size: 12px; white-space: nowrap; }
+.gbtn:disabled { opacity: .4; cursor: not-allowed; }
+.mgrid .mi { min-width: 0; }
+.mgrid .mi .mt + .mxw { margin-top: 4px; }
+.gview { position: fixed; inset: 0; z-index: 400; background: rgba(15, 18, 25, .62); display: flex; align-items: center; justify-content: center; padding: 18px; }
+.gv-card { background: var(--surface, #fff); color: var(--text, #1b1f27); border-radius: 14px; max-width: min(1500px, 96vw); max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.gv-h { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line, #e3e6ec); }
+.gv-h .gv-n { flex: 1; min-width: 0; font-size: 12px; color: var(--muted, #5b6372); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-b { overflow: auto; padding: 10px; text-align: center; }
+.gv-b img { max-width: 100%; max-height: calc(94vh - 90px); width: auto; height: auto; display: block; margin: 0 auto; background: #fff; }
+.gv-h a.btn { text-decoration: none; }
+@media (max-width: 640px) { .mxw .gbtn { padding: 4px 7px; } }

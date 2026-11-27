@@ -93,11 +93,11 @@
   // track: 'qa' 품질 | 'mfg' 제조 — which measurement set '측정값 업로드' writes (and which project list is shown)
   const TRACKS = [['qa', '품질'], ['mfg', '제조']];
   const TI = { track: 'qa', proj: '', manual: false, hand: '', test: '', no: '', date: today() }; // manual: 프로젝트명 직접 입력
-  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['track', 'proj', 'hand', 'test', 'manual'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
-  if (TI.track !== 'mfg') TI.track = 'qa';
-  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ track: TI.track, proj: TI.proj, manual: TI.manual, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
+  try { const t = JSON.parse(localStorage.getItem(TIK) || '{}'); ['proj', 'hand', 'test', 'manual'].forEach(k => { if (t[k]) TI[k] = t[k]; }); } catch (_) { /* storage blocked */ }
+  TI.track = ''; // 구분은 저장하지 않음 — 측정값 업로드 때마다 직접 선택 (제조 값이 품질에 잘못 들어가는 것 방지)
+  const saveInfo = () => { try { localStorage.setItem(TIK, JSON.stringify({ proj: TI.proj, manual: TI.manual, hand: TI.hand, test: TI.test })); } catch (_) { /* ignore */ } };
   let PROJECTS = null; // null = not loaded yet; { qa: [{ name, label }], mfg: [...] }
-  const projList = () => (PROJECTS ? (Array.isArray(PROJECTS) ? PROJECTS : PROJECTS[TI.track] || []) : []);
+  const projList = () => (PROJECTS ? (Array.isArray(PROJECTS) ? PROJECTS : PROJECTS[TI.track || 'qa'] || []) : []);
   const S = { clickCheck: true, meta: null, orig: [], pts: [], undo: [], res: null, sel: new Set(), sort: { k: 'idx', d: 1 }, outOnly: false, radius: 50, cond: {}, name: '' };
   try { const c = JSON.parse(localStorage.getItem(LSK) || '{}'); S.cond = c; if (c.radius) S.radius = Number(c.radius) || 50; S.excelAxis = !!c.excelAxis; S.clickCheck = c.clickCheck !== false; } catch (_) { /* storage blocked */ }
   const saveCond = () => { try { localStorage.setItem(LSK, JSON.stringify(Object.assign({}, S.cond, { radius: S.radius, excelAxis: !!S.excelAxis, clickCheck: !!S.clickCheck }))); } catch (_) { /* ignore */ } };
@@ -337,7 +337,7 @@
     const m = infoMissing();
     document.querySelectorAll('#fatInfo .miss').forEach(x => x.classList.remove('miss'));
     if (!m.length) return true;
-    m.forEach(([id]) => { const el = id === 'hand' || id === 'test' ? $(`#fatInfo [data-fi="${id}"]`) : (id === 'fiProj' && TI.manual ? $('#fiProjIn') : $('#' + id)); if (el) el.classList.add('miss'); });
+    m.forEach(([id]) => { const el = id === 'hand' || id === 'test' || id === 'track' ? $(`#fatInfo [data-fi="${id}"]`) : (id === 'fiProj' && TI.manual ? $('#fiProjIn') : $('#' + id)); if (el) el.classList.add('miss'); });
     toast('테스트 정보를 입력해 주세요: ' + m.map(x => x[1]).join(', '), true);
     $('#fatInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return false;
@@ -346,18 +346,17 @@
     const sel = $('#fiProj'); if (!sel) return;
     const list = projList();
     if (!TI.manual && PROJECTS && TI.proj && !list.some(x => x.name === TI.proj)) { TI.proj = ''; saveInfo(); }
-    sel.innerHTML = `<option value="">${!PROJECTS ? '프로젝트 불러오는 중…' : list.length ? `프로젝트 선택 (${list.length})` : (TI.track === 'mfg' ? '선택 가능한 프로젝트 없음 (배치 + 제조 진행중)' : '선택 가능한 프로젝트 없음 (배치 + 3~6번 공정)')}</option>`
+    sel.innerHTML = `<option value="">${!PROJECTS ? '프로젝트 불러오는 중…' : list.length ? `프로젝트 선택 (${list.length})` : (TI.track === 'mfg' ? '선택 가능한 프로젝트 없음 (배치된 프로젝트)' : '선택 가능한 프로젝트 없음 (배치 + 3~6번 공정)')}</option>`
       + list.map(x => `<option value="${esc(x.name)}" ${!TI.manual && x.name === TI.proj ? 'selected' : ''}>${esc(x.label)}</option>`).join('')
       + `<option value="__manual" ${TI.manual ? 'selected' : ''}>✎ 직접 입력…</option>`;
     const pin = $('#fiProjIn'); pin.hidden = !TI.manual; if (TI.manual && document.activeElement !== pin) pin.value = TI.proj;
-    sel.title = TI.track === 'mfg' ? '배치된(장비 칸·배치예정존) 프로젝트 중 제조 공정이 남아 있는 프로젝트' : '배치된 프로젝트 중 현재 공정이 3~6번(FAT 셋업 ~ FAT 측정(AWC))인 프로젝트';
-    const up = $('#fatUpload'); if (up) { up.textContent = `측정값 업로드 (${TI.track === 'mfg' ? '제조' : '품질'})`; up.title = TI.track === 'mfg' ? 'P-P Diameter를 선택한 프로젝트의 제조 FAT 측정값(반복정밀도/AWC) X1/X2로 저장 — 제조 비밀번호' : 'P-P Diameter를 선택한 프로젝트의 측정 공정(반복정밀도=5번, AWC=6번) X1/X2 값으로 저장 — 품질 비밀번호'; }
+    sel.title = TI.track === 'mfg' ? '배치된 모든 프로젝트 (장비 칸·배치예정존·패킹 칸, 제조 완료·품질검수단 포함)' : '배치된 프로젝트 중 현재 공정이 3~6번(FAT 셋업 ~ FAT 측정(AWC))인 프로젝트';
+    const up = $('#fatUpload'); if (up) { up.textContent = TI.track ? `측정값 업로드 (${TI.track === 'mfg' ? '제조' : '품질'})` : '측정값 업로드 (구분 선택)'; up.title = TI.track === 'mfg' ? 'P-P Diameter를 선택한 프로젝트의 제조 FAT 측정값(반복정밀도/AWC) X1/X2로 저장 — 제조 비밀번호' : 'P-P Diameter를 선택한 프로젝트의 측정 공정(반복정밀도=5번, AWC=6번) X1/X2 값으로 저장 — 품질 비밀번호'; }
     const m = infoMissing();
     $('#fiName').innerHTML = m.length ? `<span class="fi-wait">미입력: ${m.map(x => x[1]).join(', ')}</span>` : `<span>파일명</span><b>${esc(baseName())}</b>`;
   }
   function download(blob, name) { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); }
-  function exportPng() {
-    const r = S.res; if (!r || !canExport()) return;
+  function makePngCanvas(r) {
     const W = 1400, H = 960, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     drawTo(ctx, 920, H, r, { print: true, excel: S.excelAxis, title: 'XY Repeatability — ' + infoLine() });
@@ -372,7 +371,11 @@
     if (S.meta) { line('TargetArear', S.meta.target ?? '-'); line('Resolution', S.meta.resolution ?? '-'); }
     y += 10; ctx.fillStyle = '#1b1f27'; ctx.font = `800 16px ${font}`; ctx.textAlign = 'left'; ctx.fillText('TEST CONDITION', x0, y); y += 28;
     COND.forEach(([k, l, d, u]) => line(l, `${S.cond[k] ?? d} ${u}`));
-    cv.toBlob(b => { download(b, `${baseName()}.png`); toast('그래프 이미지를 저장했습니다'); }, 'image/png');
+    return cv;
+  }
+  function exportPng() {
+    const r = S.res; if (!r || !canExport()) return;
+    makePngCanvas(r).toBlob(b => { download(b, `${baseName()}.png`); toast('그래프 이미지를 저장했습니다'); }, 'image/png');
   }
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
@@ -486,8 +489,9 @@
       if (!S.res) return;
       const m = infoMissing().filter(x => ['fiProj', 'hand', 'test'].includes(x[0]));
       if (m.length) { canExport(); return; }
+      if (!TI.track) { const sg = $('#fatInfo [data-fi="track"]'); if (sg) sg.classList.add('miss'); toast('구분(품질/제조)을 선택해 주세요 — 어느 측정값에 저장할지 직접 지정해야 합니다', true); $('#fatInfo').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
       if (!root.FatTab.upload) { toast('업로드를 사용할 수 없습니다', true); return; }
-      root.FatTab.upload({ track: TI.track, proj: TI.proj, hand: TI.hand, test: TI.test, testLabel: (TESTS.find(t => t[0] === TI.test) || [])[1] || TI.test, value: f6(S.res.pp), no: String(TI.no).trim(), date: TI.date });
+      root.FatTab.upload({ track: TI.track, proj: TI.proj, hand: TI.hand, test: TI.test, testLabel: (TESTS.find(t => t[0] === TI.test) || [])[1] || TI.test, value: f6(S.res.pp), no: String(TI.no).trim(), date: TI.date, fileName: baseName(), png: () => makePngCanvas(S.res).toDataURL('image/png') });
     });
     cv.addEventListener('mousemove', e => { const p = nearest(e); cv.style.cursor = p ? 'pointer' : 'default'; cv.title = p ? `Index ${p.idx} (${f2(p.x)}, ${f2(p.y)})${p.out ? ' · OUT' : ''}` : ''; });
     $('#fatPick').addEventListener('click', e => { if (e.target.closest('.fp-x')) focusPoint(null); });

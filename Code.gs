@@ -234,6 +234,7 @@ function doGet(e) {
       case 'refRows':      return json_({ ok: true, rows: getRefRows_(p.refresh === '1'), serverTime: now_() });
       case 'board':        return json_(Object.assign({ ok: true }, boardData_()));
       case 'refFile':      return json_(Object.assign({ ok: true }, refFile_(p.id)));
+      case 'fatGraph':     return json_(Object.assign({ ok: true }, fatGraph_(p)));
       default:             return json_(Object.assign({ ok: true }, bootstrap_()));
     }
   } catch (err) {
@@ -259,6 +260,7 @@ function doPost(e) {
       case 'setSlot':       result = setSlot_(body); break;
       case 'saveStep':      result = saveStep_(body); break;
       case 'saveMeasure':   result = saveMeasure_(body); break;
+      case 'saveFatGraph':  result = saveFatGraph_(body); break;
       case 'saveSummary':   result = saveSummary_(body); break;
       case 'release':       result = release_(body); break;
       case 'restore':       result = restore_(body); break;
@@ -296,13 +298,13 @@ function json_(obj) {
 // passwords per dashboard (Script Properties):
 //   WRITE_KEY     — 통합·품질·프로젝트 관리·FAT 측정값 업로드
 //   WRITE_KEY_MFG — 제조 (제조 공정 저장 + 제조 화면의 배치 변경); falls back to WRITE_KEY when not set
-const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote', 'skipTo', 'saveSummary', 'saveMeasure']; // 제조 기타사항 = Notes id 'mfg:<id>'
+const MFG_SCOPE_ACTIONS = ['checkKey', 'saveStep', 'setSlot', 'saveNote', 'skipTo', 'saveSummary', 'saveMeasure', 'saveFatGraph']; // 제조 기타사항 = Notes id 'mfg:<id>'
 function checkKey_(b) {
   const props = PropertiesService.getScriptProperties();
   const mfg = b.scope === 'mfg';
   if (b.track === 'mfg' && !mfg && b.action !== 'bulkSkipTo') throw new Error('제조 공정은 제조 대시보드 비밀번호로 저장해야 합니다.');
   if (mfg && MFG_SCOPE_ACTIONS.indexOf(b.action) < 0) throw new Error('제조 대시보드 권한으로는 할 수 없는 작업입니다.');
-  if (mfg && ['saveStep', 'skipTo', 'saveSummary', 'saveMeasure'].indexOf(b.action) >= 0 && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
+  if (mfg && ['saveStep', 'skipTo', 'saveSummary', 'saveMeasure', 'saveFatGraph'].indexOf(b.action) >= 0 && b.track !== 'mfg') throw new Error('품질 공정은 품질 비밀번호로 저장해야 합니다.');
   const mfgNote = b.action === 'saveNote' && /^mfg:/.test(String(b.id || ''));
   if (b.action === 'saveNote' && mfgNote !== mfg) throw new Error(mfgNote ? '제조 기타사항은 제조 대시보드 비밀번호로 저장해야 합니다.' : '품질 기타사항은 품질 비밀번호로 저장해야 합니다.');
   const k = mfg ? (props.getProperty('WRITE_KEY_MFG') || props.getProperty('WRITE_KEY')) : props.getProperty('WRITE_KEY');
@@ -438,9 +440,12 @@ function bootstrap_() {
   const mSum = {}, mMeas = {};
   if (getDb_().getSheetByName('MfgSummary')) readTable_('MfgSummary').forEach(r => { mSum[String(r.projectId)] = r; });
   if (getDb_().getSheetByName('MfgMeasures')) readTable_('MfgMeasures').forEach(r => { const o = (mMeas[String(r.projectId)] = mMeas[String(r.projectId)] || {}); o[Number(r.stepNo)] = { x1: String(r.x1 === undefined ? '' : r.x1), x2: String(r.x2 === undefined ? '' : r.x2) }; });
+  const fatGr = {}; // FAT 그래프 PNG 존재 여부: p.fatGr['qa|5|X1'] = updatedAt
+  if (getDb_().getSheetByName('FatGraphs')) readTable_('FatGraphs').forEach(r => { const o = (fatGr[String(r.projectId)] = fatGr[String(r.projectId)] || {}); o[r.track + '|' + Number(r.stepNo) + '|' + r.hand] = String(r.updatedAt || ''); });
   projects.forEach(p => {
     const ms = mSum[p.id]; p.mfgSumProg = ms ? String(ms.summaryProgress || '') : ''; p.mfgSumIssue = ms ? String(ms.summaryIssue || '') : '';
     p.mfgMeas = mMeas[p.id] || {};
+    p.fatGr = fatGr[p.id] || {};
     p.mfg = (mfgBy[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => { delete s._row; delete s.projectId; s.stepNo = Number(s.stepNo); return s; });
     p.slot = p.slot === '' ? null : Number(p.slot);
     p.steps = (byProj[p.id] || []).sort((a, b) => Number(a.stepNo) - Number(b.stepNo)).map(s => {
@@ -637,6 +642,7 @@ function saveChecks_(pid, no, checks, user) {
 function saveMeasure_(b) {
   const items = Array.isArray(b.items) ? b.items : [];
   if (!b.projectId || !items.length) throw new Error('측정값이 없습니다.');
+  if (b.track !== 'mfg' && b.track !== 'qa') throw new Error('측정값 구분(제조/품질)이 없습니다. 화면을 새로고침(Ctrl+F5)한 뒤 다시 시도하세요.'); // 구분 누락 시 품질에 잘못 저장되는 것을 막음
   const mfg = b.track === 'mfg'; // 제조 FAT 측정값: MfgMeasures (same columns, kept apart from 품질)
   const ss = getDb_();
   const shName = mfg ? 'MfgMeasures' : 'Measures';
@@ -661,6 +667,51 @@ function saveMeasure_(b) {
   touchProject_(prow, b.user);
   history_(b.user, 'measure', proj, null, (mfg ? '제조 · ' : '') + det.join(' / '));
   return bootstrap_();
+}
+
+// ===== FAT 그래프 PNG (측정값 업로드와 함께 Drive 저장) =====
+// One PNG per project + track(qa/mfg) + step + hand(X1/X2); re-upload replaces it (old file → Drive trash). Served via fatGraph_ (base64).
+const FATGR_HEAD = ['projectId', 'track', 'stepNo', 'hand', 'fileId', 'fileName', 'size', 'updatedAt', 'updatedBy'];
+const FATGR_MAX_BYTES = 2 * 1024 * 1024;
+function fatGraphFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('FATGR_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (_) { /* recreate */ } }
+  const f = DriveApp.createFolder('Track FAT 그래프');
+  props.setProperty('FATGR_FOLDER_ID', f.getId());
+  return f;
+}
+function saveFatGraph_(b) {
+  if (b.track !== 'mfg' && b.track !== 'qa') throw new Error('측정값 구분(제조/품질)이 없습니다. 화면을 새로고침(Ctrl+F5)한 뒤 다시 시도하세요.');
+  const no = Number(b.stepNo); const def = STEPS[no - 1];
+  if (!def || !def.measure) throw new Error('측정 공정이 아닙니다.');
+  const hand = b.hand === 'X2' ? 'X2' : 'X1';
+  const bytes = Utilities.base64Decode(String(b.data || '').replace(/^data:image\/png;base64,/, ''));
+  if (!bytes.length) throw new Error('그래프 이미지가 없습니다.');
+  if (bytes.length > FATGR_MAX_BYTES) throw new Error('그래프 이미지는 2MB 이하만 올릴 수 있습니다.');
+  const prow = projectRow_(b.projectId);
+  const proj = rowObj_('Projects', prow);
+  const sh = tableSheet_('FatGraphs', FATGR_HEAD);
+  const old = findRow_(sh, r => String(r[0]) === String(b.projectId) && String(r[1]) === b.track && Number(r[2]) === no && String(r[3]) === hand);
+  if (old > 0) {
+    const fid = String(sh.getRange(old, 5).getValue());
+    if (fid) { try { DriveApp.getFileById(fid).setTrashed(true); } catch (_) { /* already gone */ } }
+  }
+  const name = String(b.fileName || (proj.projectName + '_' + hand + '_' + (def.name || ''))).replace(/[\\\/:*?"<>|]/g, '_').replace(/\.png$/i, '') + '.png';
+  const file = fatGraphFolder_().createFile(Utilities.newBlob(bytes, 'image/png', name));
+  const t = now_();
+  const vals = [String(b.projectId), b.track, String(no), hand, file.getId(), name, String(bytes.length), t, b.user || ''];
+  if (old > 0) sh.getRange(old, 1, 1, vals.length).setNumberFormat('@').setValues([vals]); else appendRowsText_(sh, [vals]);
+  touchProject_(prow, b.user);
+  history_(b.user, 'measure', proj, null, (b.track === 'mfg' ? '제조 · ' : '') + '그래프 업로드 ' + no + '. ' + def.name + ' ' + hand);
+  return bootstrap_();
+}
+function fatGraph_(p) {
+  const sheet = getDb_().getSheetByName('FatGraphs');
+  const r = sheet ? readTable_('FatGraphs').filter(x => String(x.projectId) === String(p.id) && String(x.track) === String(p.track) && Number(x.stepNo) === Number(p.no) && String(x.hand) === String(p.hand))[0] : null;
+  if (!r || !r.fileId) throw new Error('업로드된 그래프가 없습니다.');
+  const blob = DriveApp.getFileById(String(r.fileId)).getBlob();
+  return { name: String(r.fileName), updatedAt: String(r.updatedAt || ''), data: Utilities.base64Encode(blob.getBytes()) };
 }
 
 function saveSummary_(b) {

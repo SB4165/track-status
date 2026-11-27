@@ -339,8 +339,9 @@
     if (window.FatTab) window.FatTab.setProjects({
       qa: Object.values(bySlot()).map(p => ({ p, i: projectInfo(p) })).filter(x => x.i.curNo >= 3 && x.i.curNo <= 6)
         .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · ${i.cur.stepNo}. ${i.cur.stepName}` })),
-      mfg: Object.values(bySlot()).filter(p => !isPack(p.slot)).map(p => ({ p, i: projectInfo(vpM(p)) })).filter(x => x.i.cur)
-        .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · 제조 ${i.cur.stepNo}. ${i.cur.stepName}` })),
+      // 제조: 배치된 모든 프로젝트 (제조 완료 후 품질검수단·패킹 칸에 있어도 표시)
+      mfg: Object.values(bySlot()).map(p => ({ p, i: projectInfo(vpM(p)), q: projectInfo(p) }))
+        .sort((a, b) => a.p.slot - b.p.slot).map(({ p, i, q }) => ({ name: p.projectName, label: `${slotName(p.slot)} · ${p.projectName} · ${i.cur ? `제조 ${i.cur.stepNo}. ${i.cur.stepName}` : `제조 완료${q.cur ? ` · 품질 ${q.cur.stepNo}. ${q.cur.stepName}` : ''}`}` })),
     });
     syncLabel();
     // re-render the open project only for local changes (server syncs must not wipe what the user is typing)
@@ -896,7 +897,11 @@
   const isMeasure = isMeasureQ;
   // 제조 FAT 측정값 are kept apart from 품질 (p.mfgMeas[no] = {x1, x2})
   const measSrc = (p, no, mfg) => (mfg ? ((p.mfgMeas || {})[no] || {}) : ((p.steps || []).find(x => Number(x.stepNo) === Number(no)) || {}));
-  const measInputs = (no, s) => ['x1', 'x2'].map(k => `<label class="mx"><span>${k.toUpperCase()}</span><input type="text" inputmode="decimal" data-mx="${no}" data-k="${k}" value="${esc(s[k] || '')}" placeholder="값"></label>`).join('');
+  // p/mfg given -> '그래프 확인' button right of each value (enabled when a FAT graph PNG was uploaded for that track/step/hand)
+  const measInputs = (no, s, p, mfg) => ['x1', 'x2'].map(k => {
+    const tr = mfg ? 'mfg' : 'qa'; const at = p && (p.fatGr || {})[`${tr}|${no}|${k.toUpperCase()}`];
+    return `<span class="mxw"><label class="mx"><span>${k.toUpperCase()}</span><input type="text" inputmode="decimal" data-mx="${no}" data-k="${k}" value="${esc(s[k] || '')}" placeholder="값"></label>${p ? `<button type="button" class="btn ghost gbtn" data-graph="${tr}|${no}|${k.toUpperCase()}" ${at ? '' : 'disabled'} title="${at ? `업로드된 FAT 그래프 보기 (${esc(at)})` : 'FAT 테스트 탭에서 측정값을 업로드하면 그래프가 저장됩니다'}">그래프 확인</button>` : ''}</span>`;
+  }).join('');
   // changed measurement values in the open project window -> [{stepNo, x1, x2}]
   function measChanges(p, onlyNo, mfg) {
     return measDefs().filter(d => !onlyNo || d.no === onlyNo).map(d => {
@@ -906,12 +911,31 @@
     }).filter(m => m.x1 !== m.old[0] || m.x2 !== m.old[1]).map(m => ({ stepNo: m.stepNo, x1: m.x1, x2: m.x2 }));
   }
   function saveMeas(pid, items, msg, mfg) {
-    return mutate(Object.assign({ action: 'saveMeasure', projectId: pid, items }, mfg ? { track: 'mfg' } : {}), msg, (d, user) => {
+    return mutate({ action: 'saveMeasure', projectId: pid, items, track: mfg ? 'mfg' : 'qa' }, msg, (d, user) => {
       const p = byId(d, pid); if (!p) return;
       if (mfg) { p.mfgMeas = p.mfgMeas || {}; items.forEach(it => { p.mfgMeas[it.stepNo] = { x1: it.x1, x2: it.x2 }; }); }
       else items.forEach(it => { const s = p.steps.find(x => Number(x.stepNo) === it.stepNo); if (s) Object.assign(s, { x1: it.x1, x2: it.x2 }); });
       p.updatedAt = nowStr();
     });
+  }
+  // '그래프 확인': FAT 탭에서 측정값과 함께 업로드한 그래프 PNG를 불러와 큰 화면으로 표시
+  async function viewFatGraph(pid, track, no, hand) {
+    let box = $('#gView'); if (box) box.remove();
+    box = document.createElement('div'); box.id = 'gView'; box.className = 'gview';
+    box.innerHTML = `<div class="gv-card"><div class="gv-h"><b>FAT 그래프 · ${track === 'mfg' ? '제조' : '품질'} · ${hand}</b><span class="gv-n"></span><a class="btn ghost" id="gvDl" hidden>다운로드</a><button class="btn ghost" id="gvX" type="button">닫기</button></div><div class="gv-b"><div class="empty-msg">불러오는 중…</div></div></div>`;
+    document.body.appendChild(box);
+    const close = () => { box.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    $('#gvX', box).onclick = close;
+    box.addEventListener('click', (e) => { if (e.target === box) close(); });
+    try {
+      const r = await apiGet({ action: 'fatGraph', id: pid, track, no: String(no), hand });
+      const src = 'data:image/png;base64,' + r.data;
+      $('.gv-b', box).innerHTML = `<img alt="FAT 그래프" src="${src}">`;
+      $('.gv-n', box).textContent = `${r.name || ''}${r.updatedAt ? ' · ' + r.updatedAt : ''}`;
+      const dl = $('#gvDl', box); dl.href = src; dl.download = r.name || 'fat-graph.png'; dl.hidden = false;
+    } catch (e) { $('.gv-b', box).innerHTML = `<div class="empty-msg">${esc(e.message)}</div>`; }
   }
   // nonconformance history of one project (compact = per 불량(소분류) chips, detail list on demand)
   const NX = { pid: null, open: false, defect: '' };
@@ -937,7 +961,7 @@
   const ckSet = (s) => new Set(String((s && s.checks) || '').split(',').map(x => x.trim()).filter(Boolean));
   const ckVal = (el) => { const r = el.querySelector('[data-checks]'); return r ? [...r.querySelectorAll('input:checked')].map(x => x.value).join(',') : undefined; };
   // step panels (품질 + 제조 share the markup; 제조 has no file/measure/check fields)
-  function stepsHTML(steps, i, mfg) {
+  function stepsHTML(steps, i, mfg, proj) {
     return (steps || []).map(s => {
       const no = Number(s.stepNo);
       const isFile = !mfg && (s.fileRequired === true || String(s.fileRequired).toUpperCase() === 'TRUE');
@@ -963,7 +987,7 @@
             <label class="f">완료일<input type="date" name="endDate" value="${esc(s.endDate)}"></label>
             <label class="f">담당자<input type="text" name="owner" value="${esc(s.owner)}" placeholder="이름" list="userList" autocomplete="off"></label>
           </div>
-          ${isMeasure(no) ? `<div class="meas-row"><span class="hint">측정값</span>${measInputs(no, s)}</div>` : ''}
+          ${isMeasure(no) ? `<div class="meas-row"><span class="hint">측정값</span>${measInputs(no, s, proj, false)}</div>` : ''}
           ${stepChecks(no).length ? `<div class="chk-row" data-checks="1"><span class="hint">확인</span>${stepChecks(no).map(k => `<label class="chk"><input type="checkbox" value="${esc(k)}" ${ckSet(s).has(k) ? 'checked' : ''}> ${esc(k)} 확인</label>`).join('')}</div>` : ''}
           <div class="f"><span>세부 진행사항 <span class="rt-hint">Ctrl+B 굵게</span></span><div class="in rta r3" contenteditable="true" role="textbox" aria-multiline="true" aria-label="세부 진행사항" name="progress" data-ph="진행 내용을 입력하세요">${md2html(s.progress)}</div></div>
           <div class="f"><span>이슈사항 <span class="rt-hint">Ctrl+B 굵게</span></span><div class="in rta r2" contenteditable="true" role="textbox" aria-multiline="true" aria-label="이슈사항" name="issue" data-ph="이슈가 있으면 입력하세요">${md2html(s.issue)}</div></div>
@@ -982,7 +1006,7 @@
   const sumBtnsHTML = (i) => `<div style="display:flex;gap:6px">${i.manualProg || i.manualIssue ? '<button class="btn ghost" id="autoSum" title="직접 작성한 요약을 지우고 자동 초안으로 표시">자동 초안으로</button>' : ''}<button class="btn" id="saveSum">요약 저장</button></div>`;
   const measBoxHTML = (p, mfg) => (measDefs().length ? `<div class="measbox">
           <div class="mh"><b>FAT 측정값</b><span class="hint">${mfg ? '제조 측정값 — 품질 측정값과 따로 기록됩니다 (FAT 테스트 탭에서 \'제조\'로 업로드 가능)' : 'X1 · X2 직접 입력 가능 — 입력값은 각 공정의 측정값으로 함께 기록됩니다'}</span><button class="btn" id="saveMeas">측정값 저장</button></div>
-          <div class="mgrid">${measDefs().map(dd => `<div class="mi"><div class="mt"><span class="mn">${dd.no}</span>${esc(String(dd.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1') || dd.name)}</div>${measInputs(dd.no, measSrc(p, dd.no, mfg))}</div>`).join('')}</div>
+          <div class="mgrid">${measDefs().map(dd => `<div class="mi"><div class="mt"><span class="mn">${dd.no}</span>${esc(String(dd.name).replace(/^FAT 측정/, '').replace(/^\((.*)\)$/, '$1') || dd.name)}</div>${measInputs(dd.no, measSrc(p, dd.no, mfg), p, mfg)}</div>`).join('')}</div>
         </div>` : '');
   function renderProject(p, keepScroll) {
     const body = $('#mBody');
@@ -993,7 +1017,7 @@
     if (state.openStep == null && i.cur) state.openStep = Number(i.cur.stepNo);
     $('#mSlot').textContent = `${active ? (p.slot ? slotName(p.slot) + ' 배치' : '미배치') : '출하완료'} · ${i.done}/${i.total} 완료`;
     $('#mTitle').textContent = p.projectName;
-    const steps = stepsHTML(p.steps, i, false);
+    const steps = stepsHTML(p.steps, i, false, p);
 
     body.innerHTML = `
       <div class="box">
@@ -1805,6 +1829,8 @@
       if (mi.length) saveMeas(pid, mi, null);
       return;
     }
+    const gb = t.closest('[data-graph]');
+    if (gb) { if (!gb.disabled) { const [tr, no, hand] = gb.dataset.graph.split('|'); viewFatGraph(state.openProjectId, tr, Number(no), hand); } return; }
     const id = t.closest('button') && t.closest('button').id;
     const pid = state.openProjectId;
     const winMfg = state.openTrack === 'mfg';
@@ -2058,6 +2084,7 @@
         if (p.action === 'projectNames') return wait({ ok: true, names });
         if (p.action === 'history') { const acts = String(p.actions || '').split(',').filter(Boolean); return wait({ ok: true, rows: history.filter(r => (!p.projectId || r.projectId === p.projectId) && (!acts.length || acts.includes(r.action))) }); }
         if (p.action === 'refRows') return wait({ ok: true, rows: refRows });
+        if (p.action === 'fatGraph') { const g = (window.__demoGraphs || {})[[p.id, p.track, p.no, p.hand].join('|')]; return g ? wait({ ok: true, name: 'demo.png', updatedAt: now(), data: g }) : wait({ ok: false, error: '업로드된 그래프가 없습니다.' }); }
         if (p.action === 'board') return wait({ ok: true, board: JSON.parse(JSON.stringify(board)), refs: JSON.parse(JSON.stringify(refs)) });
         if (p.action === 'refFile') { const r = refs.find(x => x.id === p.id); return r ? wait({ ok: true, name: r.fileName, mime: r.mime, data: r._data || '' }) : wait({ ok: false, error: '파일 없음' }); }
         return wait(snap());
@@ -2116,6 +2143,7 @@
           ['status', 'startDate', 'endDate', 'owner', 'progress', 'issue'].forEach(k => (s[k] = b[k])); if (b.checks !== undefined) s.checks = b.checks; s.updatedAt = now(); s.updatedBy = b.user;
           log(b, '공정 저장', p, s);
         }
+        if (b.action === 'saveFatGraph' && p) { (window.__demoGraphs = window.__demoGraphs || {})[[p.id, b.track, b.stepNo, b.hand].join('|')] = b.data; p.fatGr = p.fatGr || {}; p.fatGr[`${b.track}|${b.stepNo}|${b.hand}`] = now(); log(b, 'measure', p, null, '그래프 업로드'); return wait(snap()); }
         if (b.action === 'saveMeasure' && p && b.track === 'mfg') { p.mfgMeas = p.mfgMeas || {}; (b.items || []).forEach(it => { p.mfgMeas[Number(it.stepNo)] = { x1: it.x1, x2: it.x2 }; }); log(b, '측정값 저장', p); return wait(snap()); }
         if (b.action === 'saveSummary' && p && b.track === 'mfg') { p.mfgSumProg = b.summaryProgress; p.mfgSumIssue = b.summaryIssue; log(b, '요약 저장', p); return wait(snap()); }
         if (b.action === 'saveMeasure' && p) { (b.items || []).forEach(it => { const s = p.steps.find(x => x.stepNo === Number(it.stepNo)); if (s) { s.x1 = it.x1; s.x2 = it.x2; } }); log(b, 'measure', p, null, JSON.stringify(b.items)); }
@@ -2146,6 +2174,14 @@
     if (needKey(sc) && !(await askKey(sc))) return;
     const item = { stepNo: def.no, x1: k === 'x1' ? u.value : String(s.x1 || ''), x2: k === 'x2' ? u.value : String(s.x2 || '') };
     saveMeas(p.id, [item], `측정값 업로드 완료 · ${mfg ? '제조' : '품질'} · ${p.projectName} ${u.hand} ${u.value}`, mfg);
+    // 같은 구분·공정·핸드의 그래프 PNG도 함께 저장 (프로젝트 창 '그래프 확인'에서 조회)
+    let png = ''; try { png = typeof u.png === 'function' ? u.png() : ''; } catch (_) { png = ''; }
+    if (png) {
+      const tr = mfg ? 'mfg' : 'qa';
+      mutate({ action: 'saveFatGraph', projectId: p.id, track: tr, stepNo: def.no, hand: u.hand, fileName: u.fileName || '', data: png.replace(/^data:image\/png;base64,/, '') }, null, (d) => {
+        const x = byId(d, p.id); if (!x) return; x.fatGr = x.fatGr || {}; x.fatGr[`${tr}|${def.no}|${u.hand}`] = nowStr();
+      });
+    }
   };
 
   // ===================== 기타 탭 (협의사항 · 회의록 · 참고자료 · 기타) =====================
